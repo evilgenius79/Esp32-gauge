@@ -8,7 +8,7 @@
 // =============================================================================
 // ESP32 OBD2 Gauge - Main Program
 //
-// CrowPanel 1.28" HMI ESP32-S3 Rotary Display + CJMCU-1051 CAN Bus
+// CrowPanel 1.28" HMI ESP32-S3 Rotary Display + M5Stack Mini CAN Unit
 //
 // Turn the rotary knob to switch between gauges.
 // Only the currently displayed gauge polls the CAN bus.
@@ -39,7 +39,7 @@ constexpr uint32_t RECONNECT_INTERVAL_MS = 3000;
 void setup() {
     Serial.begin(115200);
     Serial.println("\n=== ESP32 OBD2 Gauge ===");
-    Serial.println("CrowPanel 1.28\" + CJMCU-1051");
+    Serial.println("CrowPanel 1.28\" + M5Stack Mini CAN");
 
     // Power indicator LED
     pinMode(PIN_PWR_LIGHT, OUTPUT);
@@ -63,7 +63,8 @@ void setup() {
 
     // Draw initial gauge
     Serial.printf("[INIT] Starting with gauge: %s\n", GAUGES[currentGauge].name);
-    display.drawGauge(GAUGES[currentGauge], 0.0f, true);
+    currentValue = GAUGES[currentGauge].minVal;
+    display.drawGauge(GAUGES[currentGauge], currentValue, true);
 
     Serial.println("[INIT] Ready! Turn knob to switch gauges.");
 }
@@ -80,7 +81,7 @@ void loop() {
         Serial.printf("[ENC] Switched to: %s (PID 0x%02X)\n",
                       GAUGES[currentGauge].name, GAUGES[currentGauge].pid);
 
-        currentValue = 0.0f;
+        currentValue = GAUGES[currentGauge].minVal;
         needsFullRedraw = true;
     }
 

@@ -1,7 +1,15 @@
 #include "encoder.h"
-#include <Arduino.h>
 
 RotaryEncoder* RotaryEncoder::_instance = nullptr;
+
+// Quadrature lookup table: maps (prevAB << 2 | currAB) to direction
+// Valid transitions give +1 (CW) or -1 (CCW), invalid give 0
+static const int8_t ENC_TABLE[16] = {
+     0, -1,  1,  0,
+     1,  0,  0, -1,
+    -1,  0,  0,  1,
+     0,  1, -1,  0
+};
 
 void RotaryEncoder::begin(int pinA, int pinB, int pinSW) {
     _pinA  = pinA;
@@ -13,7 +21,13 @@ void RotaryEncoder::begin(int pinA, int pinB, int pinSW) {
     pinMode(_pinB,  INPUT_PULLUP);
     pinMode(_pinSW, INPUT_PULLUP);
 
-    attachInterrupt(digitalPinToInterrupt(_pinA), isrEncoder, FALLING);
+    // Read initial state
+    _lastAB = (digitalRead(_pinA) << 1) | digitalRead(_pinB);
+    _encState = 0;
+
+    // Attach interrupts on BOTH edges of BOTH pins for full quadrature decode
+    attachInterrupt(digitalPinToInterrupt(_pinA), isrEncoderAB, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(_pinB), isrEncoderAB, CHANGE);
     attachInterrupt(digitalPinToInterrupt(_pinSW), isrButton, FALLING);
 }
 
@@ -29,18 +43,26 @@ bool RotaryEncoder::wasPressed() {
     return p;
 }
 
-void IRAM_ATTR RotaryEncoder::isrEncoder() {
+void IRAM_ATTR RotaryEncoder::isrEncoderAB() {
     if (!_instance) return;
 
-    uint32_t now = millis();
-    if (now - _instance->_lastEncTime < 5) return; // debounce
-    _instance->_lastEncTime = now;
+    uint8_t curAB = (digitalRead(_instance->_pinA) << 1) | digitalRead(_instance->_pinB);
+    uint8_t idx = (_instance->_lastAB << 2) | curAB;
+    _instance->_lastAB = curAB;
 
-    int bVal = digitalRead(_instance->_pinB);
-    if (bVal == 0) {
+    int8_t step = ENC_TABLE[idx & 0x0F];
+    if (step == 0) return; // Invalid or no transition
+
+    _instance->_encState += step;
+
+    // Only register a direction change after a full detent (4 valid transitions)
+    // This eliminates bouncing — partial/noisy transitions cancel out
+    if (_instance->_encState >= 4) {
         _instance->_direction = 1;  // CW
-    } else {
+        _instance->_encState = 0;
+    } else if (_instance->_encState <= -4) {
         _instance->_direction = -1; // CCW
+        _instance->_encState = 0;
     }
 }
 
@@ -48,8 +70,11 @@ void IRAM_ATTR RotaryEncoder::isrButton() {
     if (!_instance) return;
 
     uint32_t now = millis();
-    if (now - _instance->_lastBtnTime < 200) return; // debounce
+    if (now - _instance->_lastBtnTime < 250) return; // 250ms debounce
     _instance->_lastBtnTime = now;
 
-    _instance->_buttonPressed = true;
+    // Confirm button is actually pressed (not noise)
+    if (digitalRead(_instance->_pinSW) == LOW) {
+        _instance->_buttonPressed = true;
+    }
 }

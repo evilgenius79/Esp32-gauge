@@ -4,6 +4,7 @@
 
 // =============================================================================
 // Rotary Encoder Handler for CrowPanel 1.28"
+// Proper quadrature decoding with robust debouncing
 // =============================================================================
 
 class RotaryEncoder {
@@ -17,12 +18,16 @@ private:
     int _pinB;
     int _pinSW;
 
-    volatile int  _direction    = 0;
-    volatile bool _buttonPressed = false;
-    volatile uint32_t _lastEncTime = 0;
-    volatile uint32_t _lastBtnTime = 0;
+    // Quadrature state tracking
+    volatile int8_t  _encState     = 0;
+    volatile int     _direction    = 0;
+    volatile uint8_t _lastAB       = 0;
+
+    // Button state
+    volatile bool     _buttonPressed = false;
+    volatile uint32_t _lastBtnTime   = 0;
 
     static RotaryEncoder* _instance;
-    static void IRAM_ATTR isrEncoder();
+    static void IRAM_ATTR isrEncoderAB();
     static void IRAM_ATTR isrButton();
 };

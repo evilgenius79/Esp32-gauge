@@ -35,7 +35,8 @@
 // ---- Power Indicator ----
 #define PIN_PWR_LIGHT   40
 
-// ---- CAN Bus (CJMCU-1051 TJA1051) ----
-// Using the two available expansion GPIOs on FPC connector
+// ---- CAN Bus (M5Stack Mini CAN Unit - TJA1051T/3) ----
+// Grove connector: White wire = TX, Yellow wire = RX
+// Connected to the two available expansion GPIOs on FPC connector
 #define PIN_CAN_TX       4
 #define PIN_CAN_RX      12

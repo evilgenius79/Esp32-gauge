@@ -56,7 +56,7 @@ public:
 };
 
 // =============================================================================
-// Gauge Renderer
+// Gauge Renderer - Neon racing tachometer style
 // =============================================================================
 
 class GaugeDisplay {
@@ -67,20 +67,18 @@ public:
     void setBrightness(uint8_t percent);
 
 private:
-    LGFX       _tft;
-    LGFX_Sprite _sprite;   // Full-screen sprite for flicker-free drawing
+    LGFX        _tft;
+    LGFX_Sprite _sprite;
 
-    int   _prevGaugeIdx = -1;
     float _prevValue    = -99999.0f;
     bool  _prevConnected = true;
 
-    // Drawing helpers
-    void drawArc(int cx, int cy, int r_outer, int r_inner,
-                 float startAngle, float endAngle, uint16_t color);
-    void drawNeedle(int cx, int cy, float angle, int length, uint16_t color);
-    void drawScaleMarks(int cx, int cy, int radius,
-                        float minVal, float maxVal,
-                        float startAngle, float sweepAngle);
-    uint16_t valueToColor(const GaugeConfig& gauge, float value);
+    void drawOuterRing(const GaugeConfig& gauge);
+    void drawTicksAndNumbers(const GaugeConfig& gauge);
+    void drawNeedle(float angleDeg, uint16_t color);
+    void drawCenterHub(const GaugeConfig& gauge, float value);
+    void drawGlowArc(int cx, int cy, int radius, float startDeg, float endDeg,
+                     uint16_t color, int thickness);
     float valueToAngle(const GaugeConfig& gauge, float value);
+    uint16_t dimColor(uint16_t color, uint8_t factor);
 };

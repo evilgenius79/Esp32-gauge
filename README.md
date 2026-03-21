@@ -1,43 +1,42 @@
 # ESP32 OBD2 Gauge
 
-A real-time automotive gauge display using the **CrowPanel 1.28" HMI ESP32-S3 Rotary Display** and a **CJMCU-1051 CAN bus transceiver** module. Turn the rotary knob to switch between gauges — only the active gauge polls the CAN bus.
+A real-time automotive gauge display using the **CrowPanel 1.28" HMI ESP32-S3 Rotary Display** and an **M5Stack Mini CAN Unit (TJA1051T/3)**. Turn the rotary knob to switch between gauges — only the active gauge polls the CAN bus.
 
 ## Hardware
 
 | Component | Description |
 |-----------|-------------|
 | [CrowPanel 1.28" HMI ESP32 Rotary Display](https://www.elecrow.com/wiki/CrowPanel_1.28inch-HMI_ESP32_Rotary_Display.html) | ESP32-S3, 240x240 IPS round display (GC9A01), rotary encoder, touch |
-| [CJMCU-1051](https://www.diymore.cc/products/cjmcu-1051-tja1051-high-speed-low-power-can-transceiver-for-arduino) | TJA1051 high-speed CAN transceiver module |
+| [M5Stack Mini CAN Unit](https://shop.m5stack.com/products/mini-can-unit-tja1051t-3) | TJA1051T/3 CAN transceiver, 3.3V I/O compatible, Grove connector |
 | OBD2 connector | Standard 16-pin OBD-II plug (CAN on pins 6 & 14) |
 
 ## Wiring
 
-### CJMCU-1051 to CrowPanel (FPC Connector)
+### M5Stack Mini CAN to CrowPanel (FPC Connector)
 
-| CJMCU-1051 Pin | CrowPanel Pin | Notes |
-|----------------|---------------|-------|
-| VCC | 5V | From USB or external 5V |
-| GND | GND | Common ground |
-| CTX | GPIO 4 | CAN TX (FPC expansion IO) |
-| CRX | GPIO 12 | CAN RX (FPC expansion IO) |
-| S | GND | Already pulled low on module via 10K resistor |
+The M5Stack Mini CAN has a **Grove (HY2.0-4P) connector**. Cut a Grove cable or use jumper wires to connect to the CrowPanel FPC expansion pads:
 
-### CJMCU-1051 to OBD2 Connector
+| Grove Wire Color | M5Stack Pin | CrowPanel Pin | Notes |
+|------------------|-------------|---------------|-------|
+| Red | 5V | 5V | Power (or from OBD2 pin 16) |
+| Black | GND | GND | Common ground |
+| White | CAN_TX (TXD) | GPIO 4 | CAN TX — FPC expansion IO |
+| Yellow | CAN_RX (RXD) | GPIO 12 | CAN RX — FPC expansion IO |
 
-| CJMCU-1051 Pin | OBD2 Pin | Description |
-|----------------|----------|-------------|
+### M5Stack Mini CAN to OBD2 Connector
+
+The M5Stack Mini CAN has screw terminals for CANH/CANL:
+
+| M5Stack Terminal | OBD2 Pin | Description |
+|------------------|----------|-------------|
 | CANH | Pin 6 | CAN High |
 | CANL | Pin 14 | CAN Low |
 
-### ⚠️ Voltage Level Warning
+**Note:** The M5Stack Mini CAN has a built-in 120Ω termination resistor. If your vehicle's OBD2 port already has termination, this is fine for a two-node bus. The unit also has built-in DC-DC isolation and ESD protection.
 
-The standard TJA1051T operates at 5V logic levels on its CTX/CRX pins, but the ESP32-S3 uses 3.3V GPIOs. Options:
+### No Level Shifter Needed
 
-1. **Use the TJA1051T/3 variant** — has a separate VIO pin supporting 3.3V–5V I/O. No level shifter needed.
-2. **Add series resistors** (1K–6.8K) on CTX and CRX lines for basic protection.
-3. **Use a bidirectional level shifter** for guaranteed safe operation.
-
-Many users run the standard TJA1051 directly with ESP32 without issues, but it's not guaranteed safe long-term.
+The M5Stack Mini CAN uses the **TJA1051T/3** variant which supports 3.3V–5V I/O natively. It connects directly to the ESP32-S3's 3.3V GPIO pins without any level shifting.
 
 ## Gauges
 
@@ -92,7 +91,7 @@ src/
 ├── main.cpp        # Main setup/loop, gauge switching logic
 ├── display.cpp     # GC9A01 display driver, gauge rendering with sprites
 ├── obd2.cpp        # CAN bus communication via TWAI, OBD2 PID requests
-└── encoder.cpp     # Rotary encoder ISR handling
+└── encoder.cpp     # Rotary encoder with quadrature decoding & debounce
 include/
 ├── pins.h          # All hardware pin definitions
 ├── gauges.h        # Gauge configs, PID definitions, decode formulas
@@ -107,7 +106,7 @@ include/
 - **Sprite-based rendering** — full-screen PSRAM sprite eliminates flicker
 - **LovyanGFX** — fast DMA-accelerated SPI, native GC9A01 support
 - **ESP32 TWAI** — built-in CAN controller, no MCP2515 SPI overhead
-- **ISR-based encoder** — responsive knob input, no polling delay
+- **Quadrature encoder decoding** — lookup-table-based state machine with 4-step detent threshold eliminates bouncing and false triggers
 
 ## OBD2 Protocol Notes
 
@@ -121,7 +120,7 @@ include/
 
 - [CrowPanel 1.28" Wiki](https://www.elecrow.com/wiki/CrowPanel_1.28inch-HMI_ESP32_Rotary_Display.html)
 - [Elecrow GitHub (factory code)](https://github.com/Elecrow-RD/CrowPanel-1.28inch-HMI-ESP32-Rotary-Display-240-240-IPS-Round-Touch-Knob-Screen)
+- [M5Stack Mini CAN Unit](https://docs.m5stack.com/en/unit/Unit-Mini%20CAN)
 - [ESP32-TWAI-CAN Library](https://github.com/handmade0octopus/ESP32-TWAI-CAN)
 - [OBD2 PID Table](https://en.wikipedia.org/wiki/OBD-II_PIDs)
 - [ESP32 TWAI Documentation](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/twai.html)
-- [TJA1051 CAN Transceiver](https://www.circuitstate.com/tutorials/what-is-can-bus-how-to-use-can-interface-with-esp32-and-arduino/)
