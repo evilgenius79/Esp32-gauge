@@ -56,7 +56,7 @@ public:
 };
 
 // =============================================================================
-// Gauge Renderer - Neon racing tachometer style
+// Gauge Renderer
 // =============================================================================
 
 class GaugeDisplay {
@@ -68,17 +68,24 @@ public:
 
 private:
     LGFX        _tft;
-    LGFX_Sprite _sprite;
+    LGFX_Sprite _sprite;   // Full-screen sprite for flicker-free drawing
 
     float _prevValue    = -99999.0f;
     bool  _prevConnected = true;
 
-    void drawOuterRing(const GaugeConfig& gauge);
-    void drawTicksAndNumbers(const GaugeConfig& gauge);
-    void drawNeedle(float angleDeg, uint16_t color);
-    void drawCenterHub(const GaugeConfig& gauge, float value);
-    void drawGlowArc(int cx, int cy, int radius, float startDeg, float endDeg,
-                     uint16_t color, int thickness);
+    // Helpers using LovyanGFX angle convention: 0°=top, clockwise
+    void drawTicksAndLabels(const GaugeConfig& gauge);
+    void drawNeedle(float angleDeg);
+
+    // Angle convention: 0°=top, CW. Gauge arc: 225° to 135° (270° sweep)
     float valueToAngle(const GaugeConfig& gauge, float value);
-    uint16_t dimColor(uint16_t color, uint8_t factor);
+    uint16_t valueToColor(const GaugeConfig& gauge, float value);
+
+    // Trig helpers for LovyanGFX angle convention (0°=top, CW)
+    static inline float arcX(int cx, int r, float deg) {
+        return cx + r * sinf(deg * DEG_TO_RAD);
+    }
+    static inline float arcY(int cy, int r, float deg) {
+        return cy - r * cosf(deg * DEG_TO_RAD);
+    }
 };

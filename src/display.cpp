@@ -3,74 +3,45 @@
 #include <cmath>
 
 // =============================================================================
-// Screen & gauge geometry
+// Geometry constants
 // =============================================================================
-static constexpr int SW = 240;
-static constexpr int SH = 240;
-static constexpr int CX = 120;
-static constexpr int CY = 120;
+static constexpr int CX = 120;            // Center X
+static constexpr int CY = 120;            // Center Y
 
-// Arc geometry: 270° sweep from bottom-left (135°) to bottom-right (45°)
-static constexpr float ARC_START = 135.0f;
-static constexpr float ARC_SWEEP = 270.0f;
+// Arc geometry (LovyanGFX angles: 0°=top, clockwise)
+static constexpr float ARC_START  = 225.0f;  // 7:30 position
+static constexpr float ARC_END    = 135.0f;  // 4:30 position
+static constexpr float ARC_SWEEP  = 270.0f;  // Total degrees
 
-// Radii
-static constexpr int R_OUTER      = 118;  // Outer edge of tick area
-static constexpr int R_TICK_MAJ   = 116;  // Major tick outer
-static constexpr int R_TICK_MAJ_I = 102;  // Major tick inner
-static constexpr int R_TICK_MIN   = 116;  // Minor tick outer
-static constexpr int R_TICK_MIN_I = 108;  // Minor tick inner
-static constexpr int R_NUMBERS    = 89;   // Number label radius
-static constexpr int R_ARC_OUTER  = 118;  // Colored arc outer
-static constexpr int R_ARC_INNER  = 112;  // Colored arc inner
-static constexpr int R_NEEDLE     = 98;   // Needle tip radius
-static constexpr int R_HUB_OUTER  = 28;   // Center hub outer ring
-static constexpr int R_HUB_INNER  = 24;   // Center hub inner
+static constexpr int R_ARC_OUTER  = 115;     // Outer edge of colored arc
+static constexpr int R_ARC_INNER  = 104;     // Inner edge of colored arc (11px band)
+static constexpr int R_TICK_OUTER = 103;     // Tick marks start here
+static constexpr int R_TICK_MAJOR = 90;      // Major tick inner end
+static constexpr int R_TICK_MINOR = 96;      // Minor tick inner end
+static constexpr int R_LABEL      = 76;      // Number label radius
+static constexpr int R_NEEDLE     = 92;      // Needle tip radius
+static constexpr int R_NEEDLE_HUB = 7;       // Center hub radius
+static constexpr int R_NEEDLE_TAIL= 14;      // Needle tail length
 
-// =============================================================================
-// Colors — neon racing tachometer palette
-// =============================================================================
-// RGB565 helper
-static constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
-    return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
-}
-
-static constexpr uint16_t COL_BG         = rgb565(2, 2, 12);     // Very dark blue-black
-static constexpr uint16_t COL_DIAL_BG    = rgb565(8, 8, 35);     // Dark blue background
-static constexpr uint16_t COL_TICK       = rgb565(220, 100, 40);  // Orange ticks
-static constexpr uint16_t COL_TICK_DIM   = rgb565(120, 50, 20);   // Dim orange minor ticks
-static constexpr uint16_t COL_NUM        = rgb565(255, 255, 255); // White numbers
-static constexpr uint16_t COL_RED        = rgb565(255, 20, 20);   // Bright red
-static constexpr uint16_t COL_RED_DIM    = rgb565(120, 5, 5);     // Dim red (inactive arc)
-static constexpr uint16_t COL_RED_GLOW   = rgb565(200, 30, 10);   // Red glow
-static constexpr uint16_t COL_NEEDLE     = rgb565(255, 40, 20);   // Bright red needle
-static constexpr uint16_t COL_NEEDLE_DIM = rgb565(180, 25, 10);   // Needle edge
-static constexpr uint16_t COL_HUB_RING   = rgb565(255, 60, 20);   // Hub ring (bright red-orange)
-static constexpr uint16_t COL_HUB_GLOW   = rgb565(180, 20, 5);    // Hub glow
-static constexpr uint16_t COL_HUB_CENTER = rgb565(255, 80, 30);   // Hub center bright
-static constexpr uint16_t COL_VALUE      = rgb565(255, 255, 255); // Value text white
-static constexpr uint16_t COL_UNITS_TXT  = rgb565(200, 200, 200); // Units text gray
-static constexpr uint16_t COL_LABEL      = rgb565(255, 80, 30);   // Scale label (orange-red)
-static constexpr uint16_t COL_WARN       = rgb565(255, 200, 0);   // Yellow warning
-static constexpr uint16_t COL_NOCAN      = rgb565(255, 160, 0);   // Orange disconnected
-
-static inline float degToRad(float d) { return d * M_PI / 180.0f; }
+// Colors (RGB565)
+static constexpr uint16_t COL_BG       = 0x0011;  // Very dark blue
+static constexpr uint16_t COL_DIAL_BG  = 0x0019;  // Slightly lighter dark blue
+static constexpr uint16_t COL_GREEN    = 0x07E0;
+static constexpr uint16_t COL_YELLOW   = 0xFFE0;
+static constexpr uint16_t COL_RED      = 0xF800;
+static constexpr uint16_t COL_ORANGE   = 0xFD20;
+static constexpr uint16_t COL_WHITE    = 0xFFFF;
+static constexpr uint16_t COL_LGRAY    = 0xC618;
+static constexpr uint16_t COL_DGRAY    = 0x4208;
+static constexpr uint16_t COL_NEEDLE   = 0xF800;  // Red
+static constexpr uint16_t COL_DISCONN  = 0xFDA0;  // Orange
 
 // =============================================================================
-// Dim a 565 color by a factor (0-255, 255 = full brightness)
-// =============================================================================
-uint16_t GaugeDisplay::dimColor(uint16_t color, uint8_t factor) {
-    uint8_t r = ((color >> 11) & 0x1F) * factor / 255;
-    uint8_t g = ((color >> 5) & 0x3F) * factor / 255;
-    uint8_t b = (color & 0x1F) * factor / 255;
-    return (r << 11) | (g << 5) | b;
-}
-
-// =============================================================================
-// Public methods
+// Initialization
 // =============================================================================
 
 void GaugeDisplay::begin() {
+    // Enable LCD power
     pinMode(PIN_LCD_PWR_EN1, OUTPUT);
     pinMode(PIN_LCD_PWR_EN2, OUTPUT);
     digitalWrite(PIN_LCD_PWR_EN1, HIGH);
@@ -79,13 +50,15 @@ void GaugeDisplay::begin() {
     _tft.init();
     _tft.setRotation(0);
 
+    // Backlight PWM
     ledcSetup(0, 5000, 8);
     ledcAttachPin(PIN_TFT_BL, 0);
     setBrightness(70);
 
+    // Full-screen sprite in PSRAM
     _sprite.setColorDepth(16);
     _sprite.setPsram(true);
-    _sprite.createSprite(SW, SH);
+    _sprite.createSprite(240, 240);
 
     _tft.fillScreen(COL_BG);
     _prevValue = -99999.0f;
@@ -96,256 +69,206 @@ void GaugeDisplay::setBrightness(uint8_t percent) {
     ledcWrite(0, (percent * 255) / 100);
 }
 
+// =============================================================================
+// Convert value to angle (LovyanGFX: 0°=top, CW)
+// =============================================================================
+
 float GaugeDisplay::valueToAngle(const GaugeConfig& gauge, float value) {
     float frac = (value - gauge.minVal) / (gauge.maxVal - gauge.minVal);
-    if (frac < 0.0f) frac = 0.0f;
-    if (frac > 1.0f) frac = 1.0f;
-    return ARC_START + ARC_SWEEP * frac;
+    frac = constrain(frac, 0.0f, 1.0f);
+    // Start at 225°, sweep 270° clockwise. Handle wrap past 360°.
+    float angle = ARC_START + ARC_SWEEP * frac;
+    if (angle >= 360.0f) angle -= 360.0f;
+    return angle;
 }
 
-void GaugeDisplay::drawGauge(const GaugeConfig& gauge, float value, bool forceRedraw) {
-    float clamped = value;
-    if (clamped < gauge.minVal) clamped = gauge.minVal;
-    if (clamped > gauge.maxVal) clamped = gauge.maxVal;
+uint16_t GaugeDisplay::valueToColor(const GaugeConfig& gauge, float value) {
+    if (value >= gauge.dangerVal) return COL_RED;
+    if (value >= gauge.warnVal)   return COL_YELLOW;
+    return COL_WHITE;
+}
 
+// =============================================================================
+// Main draw routine
+// =============================================================================
+
+void GaugeDisplay::drawGauge(const GaugeConfig& gauge, float value, bool forceRedraw) {
+    float clamped = constrain(value, gauge.minVal, gauge.maxVal);
+
+    // Skip if value barely changed
     if (!forceRedraw && fabsf(clamped - _prevValue) < (gauge.maxVal - gauge.minVal) * 0.003f) {
         return;
     }
     _prevValue = clamped;
 
-    // --- Clear sprite with dark blue-black background ---
+    // --- Clear sprite ---
     _sprite.fillSprite(COL_BG);
 
-    // --- Circular dial background ---
-    _sprite.fillCircle(CX, CY, R_OUTER, COL_DIAL_BG);
+    // --- Dial background circle ---
+    _sprite.fillCircle(CX, CY, R_ARC_OUTER + 2, COL_DIAL_BG);
+    _sprite.fillCircle(CX, CY, R_ARC_INNER - 1, COL_BG);
 
-    // --- Draw the colored outer arc ---
-    drawOuterRing(gauge);
+    // --- Colored arc segments using fillArc (no gaps!) ---
+    float range = gauge.maxVal - gauge.minVal;
+    float warnFrac   = (gauge.warnVal - gauge.minVal) / range;
+    float dangerFrac = (gauge.dangerVal - gauge.minVal) / range;
 
-    // --- Draw ticks and numbers ---
-    drawTicksAndNumbers(gauge);
+    // Calculate arc segment angles (LovyanGFX convention)
+    float greenEnd  = ARC_START + ARC_SWEEP * warnFrac;
+    float yellowEnd = ARC_START + ARC_SWEEP * dangerFrac;
+    float redEnd    = ARC_START + ARC_SWEEP;
 
-    // --- Scale label (e.g., "x1000r/min") ---
-    _sprite.setTextColor(COL_LABEL);
-    _sprite.setTextDatum(MC_DATUM);
-    _sprite.setFont(&fonts::Font0);
-    _sprite.drawString(gauge.scaleLabel, CX + 18, CY - 28);
+    // Green zone
+    _sprite.fillArc(CX, CY, R_ARC_OUTER, R_ARC_INNER,
+                    fmodf(ARC_START, 360.0f), fmodf(greenEnd, 360.0f), COL_GREEN);
 
-    // --- Draw needle ---
+    // Yellow zone
+    _sprite.fillArc(CX, CY, R_ARC_OUTER, R_ARC_INNER,
+                    fmodf(greenEnd, 360.0f), fmodf(yellowEnd, 360.0f), COL_YELLOW);
+
+    // Red zone
+    _sprite.fillArc(CX, CY, R_ARC_OUTER, R_ARC_INNER,
+                    fmodf(yellowEnd, 360.0f), fmodf(redEnd, 360.0f), COL_RED);
+
+    // --- Tick marks and number labels ---
+    drawTicksAndLabels(gauge);
+
+    // --- Needle ---
     float needleAngle = valueToAngle(gauge, clamped);
-    drawNeedle(needleAngle, COL_NEEDLE);
+    drawNeedle(needleAngle);
 
-    // --- Draw center hub with glow ring ---
-    drawCenterHub(gauge, clamped);
+    // --- Center hub ---
+    _sprite.fillCircle(CX, CY, R_NEEDLE_HUB, COL_DGRAY);
+    _sprite.fillCircle(CX, CY, R_NEEDLE_HUB - 2, COL_ORANGE);
 
-    // --- Numeric value readout (lower right area) ---
-    char valBuf[16];
-    if (gauge.decimals == 0) {
-        snprintf(valBuf, sizeof(valBuf), "%.0f", clamped);
-    } else {
-        snprintf(valBuf, sizeof(valBuf), "%.*f", gauge.decimals, clamped);
-    }
+    // --- Gauge name (top area, inside the arc) ---
+    _sprite.setTextColor(COL_WHITE);
+    _sprite.setTextDatum(TC_DATUM);
+    _sprite.setFont(&fonts::FreeSansBold9pt7b);
+    _sprite.drawString(gauge.name, CX, 40);
 
-    // Value color: white normally, yellow at warn, red at danger
-    uint16_t valCol = COL_VALUE;
-    if (clamped >= gauge.dangerVal) valCol = COL_RED;
-    else if (clamped >= gauge.warnVal) valCol = COL_WARN;
-
-    _sprite.setTextColor(valCol);
-    _sprite.setTextDatum(MC_DATUM);
-    _sprite.setFont(&fonts::Font7);
-    _sprite.drawString(valBuf, CX + 15, CY + 38);
-
-    // Units label below value
-    _sprite.setTextColor(COL_UNITS_TXT);
+    // --- Units label (just above center) ---
     _sprite.setFont(&fonts::Font2);
-    _sprite.setTextDatum(MC_DATUM);
-    _sprite.drawString(gauge.units, CX + 15, CY + 60);
+    _sprite.setTextColor(COL_LGRAY);
+    _sprite.setTextDatum(BC_DATUM);
+    _sprite.drawString(gauge.units, CX, CY - 18);
 
-    // --- Connection status overlay ---
-    if (!_prevConnected) {
-        _sprite.setTextColor(COL_NOCAN);
-        _sprite.setFont(&fonts::Font2);
-        _sprite.setTextDatum(BC_DATUM);
-        _sprite.drawString("NO CAN", CX, SH - 8);
+    // --- Numeric value (below center) ---
+    char valBuf[16];
+    if (gauge.maxVal >= 1000) {
+        snprintf(valBuf, sizeof(valBuf), "%.0f", clamped);
+    } else if (gauge.pid == 0x42) {
+        snprintf(valBuf, sizeof(valBuf), "%.1f", clamped);
+    } else {
+        snprintf(valBuf, sizeof(valBuf), "%.0f", clamped);
     }
+    uint16_t valColor = valueToColor(gauge, clamped);
+    _sprite.setTextColor(valColor);
+    _sprite.setTextDatum(TC_DATUM);
+    _sprite.setFont(&fonts::FreeSansBold18pt7b);
+    _sprite.drawString(valBuf, CX, CY + 12);
 
-    // --- Push to screen ---
+    // --- Push to display ---
     _sprite.pushSprite(&_tft, 0, 0);
 }
 
 void GaugeDisplay::drawConnectionStatus(bool connected) {
     if (connected == _prevConnected) return;
     _prevConnected = connected;
-    // Will be drawn on next gauge redraw via forceRedraw or naturally
+    // Status is drawn as part of the gauge redraw cycle;
+    // force a full redraw on next frame
+    if (!connected) _prevValue = -99999.0f;
 }
 
 // =============================================================================
-// Draw the colored outer arc with dim/bright zones
+// Tick marks and number labels
 // =============================================================================
-void GaugeDisplay::drawOuterRing(const GaugeConfig& gauge) {
+
+void GaugeDisplay::drawTicksAndLabels(const GaugeConfig& gauge) {
     float range = gauge.maxVal - gauge.minVal;
-    float dangerFrac = (gauge.dangerVal - gauge.minVal) / range;
-    float dangerAngle = ARC_START + ARC_SWEEP * dangerFrac;
 
-    // Normal zone: dim orange-red
-    drawGlowArc(CX, CY, R_ARC_OUTER, ARC_START, dangerAngle,
-                COL_TICK_DIM, R_ARC_OUTER - R_ARC_INNER);
+    // Calculate nice major tick spacing
+    float majorStep;
+    if      (range >= 5000) majorStep = 1000;
+    else if (range >= 2000) majorStep = 500;
+    else if (range >= 500)  majorStep = 100;
+    else if (range >= 200)  majorStep = 50;
+    else if (range >= 100)  majorStep = 20;
+    else if (range >= 50)   majorStep = 10;
+    else if (range >= 20)   majorStep = 5;
+    else                    majorStep = 2;
 
-    // Danger zone: bright red
-    drawGlowArc(CX, CY, R_ARC_OUTER, dangerAngle, ARC_START + ARC_SWEEP,
-                COL_RED, R_ARC_OUTER - R_ARC_INNER);
-}
-
-// =============================================================================
-// Draw tick marks and numbers around the dial
-// =============================================================================
-void GaugeDisplay::drawTicksAndNumbers(const GaugeConfig& gauge) {
-    float range = gauge.maxVal - gauge.minVal;
-    int numMajor = gauge.majorDivisions;
-    float majorStep = range / numMajor;
     float minorStep = majorStep / 5.0f;
 
-    // --- Minor ticks ---
-    for (int i = 0; i <= numMajor * 5; i++) {
-        float v = gauge.minVal + i * minorStep;
-        if (v > gauge.maxVal + 0.01f) break;
-
-        // Skip positions that are major ticks
-        if (i % 5 == 0) continue;
-
+    // Draw minor ticks first (underneath major ticks)
+    for (float v = gauge.minVal; v <= gauge.maxVal + 0.001f; v += minorStep) {
         float frac = (v - gauge.minVal) / range;
-        float angle = ARC_START + ARC_SWEEP * frac;
-        float rad = degToRad(angle);
-        float c = cosf(rad), s = sinf(rad);
+        float deg = ARC_START + ARC_SWEEP * frac;
 
-        int ox = CX + (int)(R_TICK_MIN * c);
-        int oy = CY + (int)(R_TICK_MIN * s);
-        int ix = CX + (int)(R_TICK_MIN_I * c);
-        int iy = CY + (int)(R_TICK_MIN_I * s);
-
-        // Color: bright in danger zone, dim otherwise
-        uint16_t col = (v >= gauge.dangerVal) ? COL_RED : COL_TICK_DIM;
-        _sprite.drawLine(ox, oy, ix, iy, col);
+        float ox = arcX(CX, R_TICK_OUTER, deg);
+        float oy = arcY(CY, R_TICK_OUTER, deg);
+        float ix = arcX(CX, R_TICK_MINOR, deg);
+        float iy = arcY(CY, R_TICK_MINOR, deg);
+        _sprite.drawLine((int)ox, (int)oy, (int)ix, (int)iy, COL_DGRAY);
     }
 
-    // --- Major ticks + numbers ---
-    _sprite.setFont(&fonts::DejaVu18);
-    _sprite.setTextDatum(MC_DATUM);
+    // Draw major ticks with labels
+    for (float v = gauge.minVal; v <= gauge.maxVal + 0.001f; v += majorStep) {
+        float frac = (v - gauge.minVal) / range;
+        float deg = ARC_START + ARC_SWEEP * frac;
 
-    for (int i = 0; i <= numMajor; i++) {
-        float v = gauge.minVal + i * majorStep;
-        float frac = (float)i / numMajor;
-        float angle = ARC_START + ARC_SWEEP * frac;
-        float rad = degToRad(angle);
-        float c = cosf(rad), s = sinf(rad);
-
-        // Major tick line (thicker — draw 2 parallel lines)
-        int ox = CX + (int)(R_TICK_MAJ * c);
-        int oy = CY + (int)(R_TICK_MAJ * s);
-        int ix = CX + (int)(R_TICK_MAJ_I * c);
-        int iy = CY + (int)(R_TICK_MAJ_I * s);
-
-        uint16_t tickCol = (v >= gauge.dangerVal) ? COL_RED : COL_TICK;
-        _sprite.drawLine(ox, oy, ix, iy, tickCol);
-
-        // Slightly offset parallel for thickness
-        float perpR = rad + M_PI / 2.0f;
-        float pc = cosf(perpR), ps = sinf(perpR);
-        _sprite.drawLine(ox + (int)pc, oy + (int)ps, ix + (int)pc, iy + (int)ps, tickCol);
+        // Major tick line (thicker: draw 2 adjacent lines)
+        float ox = arcX(CX, R_TICK_OUTER, deg);
+        float oy = arcY(CY, R_TICK_OUTER, deg);
+        float ix = arcX(CX, R_TICK_MAJOR, deg);
+        float iy = arcY(CY, R_TICK_MAJOR, deg);
+        _sprite.drawLine((int)ox, (int)oy, (int)ix, (int)iy, COL_WHITE);
+        // Slight offset for thickness
+        _sprite.drawLine((int)ox + 1, (int)oy, (int)ix + 1, (int)iy, COL_WHITE);
 
         // Number label
-        int nx = CX + (int)(R_NUMBERS * c);
-        int ny = CY + (int)(R_NUMBERS * s);
+        float lx = arcX(CX, R_LABEL, deg);
+        float ly = arcY(CY, R_LABEL, deg);
 
         char label[8];
-        float displayVal = v / gauge.scaleDivisor;
-        if (fabsf(displayVal - roundf(displayVal)) < 0.01f) {
-            snprintf(label, sizeof(label), "%.0f", displayVal);
+        // For large ranges, show abbreviated (e.g., "1" instead of "1000")
+        if (majorStep >= 1000) {
+            snprintf(label, sizeof(label), "%.0f", v / 1000.0f);
+        } else if (majorStep >= 100 && range >= 1000) {
+            snprintf(label, sizeof(label), "%.0f", v / 1000.0f);
         } else {
-            snprintf(label, sizeof(label), "%.1f", displayVal);
+            snprintf(label, sizeof(label), "%.0f", v);
         }
 
-        uint16_t numCol = (v >= gauge.dangerVal) ? COL_RED : COL_NUM;
-        _sprite.setTextColor(numCol);
-        _sprite.drawString(label, nx, ny);
+        _sprite.setFont(&fonts::FreeSansBold9pt7b);
+        _sprite.setTextColor(COL_WHITE);
+        _sprite.setTextDatum(MC_DATUM);
+        _sprite.drawString(label, (int)lx, (int)ly);
     }
 }
 
 // =============================================================================
-// Draw the needle with glow effect
+// Needle (solid triangle)
 // =============================================================================
-void GaugeDisplay::drawNeedle(float angleDeg, uint16_t color) {
-    float rad = degToRad(angleDeg);
-    float c = cosf(rad), s = sinf(rad);
-    float perpR = rad + M_PI / 2.0f;
-    float pc = cosf(perpR), ps = sinf(perpR);
 
-    int tipX = CX + (int)(R_NEEDLE * c);
-    int tipY = CY + (int)(R_NEEDLE * s);
+void GaugeDisplay::drawNeedle(float angleDeg) {
+    // Needle tip
+    float tipX = arcX(CX, R_NEEDLE, angleDeg);
+    float tipY = arcY(CY, R_NEEDLE, angleDeg);
 
-    // Needle tail
-    int tailX = CX - (int)(18 * c);
-    int tailY = CY - (int)(18 * s);
+    // Needle tail (opposite direction)
+    float tailX = arcX(CX, R_NEEDLE_TAIL, angleDeg + 180.0f);
+    float tailY = arcY(CY, R_NEEDLE_TAIL, angleDeg + 180.0f);
 
-    // Draw glow (wider, dimmer)
-    uint16_t glowCol = dimColor(color, 80);
-    for (float w = -3.5f; w <= 3.5f; w += 0.7f) {
-        int gx = CX + (int)(w * pc);
-        int gy = CY + (int)(w * ps);
-        _sprite.drawLine(gx, gy, tipX, tipY, glowCol);
-        _sprite.drawLine(gx, gy, tailX, tailY, glowCol);
-    }
+    // Base points (perpendicular to needle direction, at center)
+    float perpDeg = angleDeg + 90.0f;
+    float baseHalfWidth = 3.5f;
+    float b1x = arcX(CX, (int)baseHalfWidth, perpDeg);
+    float b1y = arcY(CY, (int)baseHalfWidth, perpDeg);
+    float b2x = arcX(CX, (int)baseHalfWidth, perpDeg + 180.0f);
+    float b2y = arcY(CY, (int)baseHalfWidth, perpDeg + 180.0f);
 
-    // Draw core needle (bright, narrow)
-    for (float w = -1.5f; w <= 1.5f; w += 0.5f) {
-        int nx = CX + (int)(w * pc);
-        int ny = CY + (int)(w * ps);
-        _sprite.drawLine(nx, ny, tipX, tipY, color);
-        _sprite.drawLine(nx, ny, tailX, tailY, color);
-    }
-}
-
-// =============================================================================
-// Draw center hub with glowing red ring
-// =============================================================================
-void GaugeDisplay::drawCenterHub(const GaugeConfig& gauge, float value) {
-    // Outer glow ring (multiple circles for glow effect)
-    for (int r = R_HUB_OUTER + 4; r >= R_HUB_OUTER; r--) {
-        uint8_t brightness = 40 + (R_HUB_OUTER + 4 - r) * 10;
-        _sprite.drawCircle(CX, CY, r, dimColor(COL_HUB_RING, brightness));
-    }
-
-    // Main ring
-    for (int r = R_HUB_OUTER; r >= R_HUB_INNER; r--) {
-        // Gradient from bright edge to darker inside
-        uint8_t brightness = 100 + (R_HUB_OUTER - r) * 30;
-        if (brightness > 255) brightness = 255;
-        _sprite.drawCircle(CX, CY, r, dimColor(COL_HUB_RING, brightness));
-    }
-
-    // Dark center fill
-    _sprite.fillCircle(CX, CY, R_HUB_INNER - 1, COL_DIAL_BG);
-
-    // Bright center dot
-    _sprite.fillCircle(CX, CY, 4, COL_HUB_CENTER);
-    _sprite.fillCircle(CX, CY, 2, COL_RED);
-}
-
-// =============================================================================
-// Draw an arc with configurable thickness
-// =============================================================================
-void GaugeDisplay::drawGlowArc(int cx, int cy, int radius,
-                                float startDeg, float endDeg,
-                                uint16_t color, int thickness) {
-    float step = 0.6f;
-    for (float a = startDeg; a <= endDeg; a += step) {
-        float rad = degToRad(a);
-        float c = cosf(rad), s = sinf(rad);
-        int ox = cx + (int)(radius * c);
-        int oy = cy + (int)(radius * s);
-        int ix = cx + (int)((radius - thickness) * c);
-        int iy = cy + (int)((radius - thickness) * s);
-        _sprite.drawLine(ox, oy, ix, iy, color);
-    }
+    // Draw needle as two triangles (tip half + tail half)
+    _sprite.fillTriangle((int)tipX, (int)tipY, (int)b1x, (int)b1y, (int)b2x, (int)b2y, COL_NEEDLE);
+    _sprite.fillTriangle((int)tailX, (int)tailY, (int)b1x, (int)b1y, (int)b2x, (int)b2y, COL_ORANGE);
 }
