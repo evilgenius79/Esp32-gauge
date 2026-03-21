@@ -108,7 +108,9 @@ void loop() {
         display.drawGauge(gauge, currentValue, needsFullRedraw);
         needsFullRedraw = false;
 
-        // Show connection status
-        display.drawConnectionStatus(obd2.isConnected());
+        // If disconnected, force redraw next frame to show status
+        if (!obd2.isConnected()) {
+            display.drawNoCanStatus();
+        }
     }
 }

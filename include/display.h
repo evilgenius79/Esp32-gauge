@@ -56,36 +56,37 @@ public:
 };
 
 // =============================================================================
-// Gauge Renderer
+// Gauge Renderer - Matches reference tachometer style
+// Dark face, white ticks/numbers, red sweep arc, glowing needle & center ring
 // =============================================================================
 
 class GaugeDisplay {
 public:
     void begin();
     void drawGauge(const GaugeConfig& gauge, float value, bool forceRedraw);
-    void drawConnectionStatus(bool connected);
+    void drawNoCanStatus();
     void setBrightness(uint8_t percent);
 
 private:
     LGFX        _tft;
-    LGFX_Sprite _sprite;   // Full-screen sprite for flicker-free drawing
+    LGFX_Sprite _sprite;
 
-    float _prevValue    = -99999.0f;
-    bool  _prevConnected = true;
+    float _prevValue     = -99999.0f;
+    int   _prevGaugeIdx  = -1;
 
-    // Helpers using LovyanGFX angle convention: 0°=top, clockwise
-    void drawTicksAndLabels(const GaugeConfig& gauge);
+    void drawFace(const GaugeConfig& gauge);
+    void drawSweepArc(const GaugeConfig& gauge, float value);
     void drawNeedle(float angleDeg);
+    void drawCenterRing();
+    void drawLabels(const GaugeConfig& gauge, float value);
 
-    // Angle convention: 0°=top, CW. Gauge arc: 225° to 135° (270° sweep)
     float valueToAngle(const GaugeConfig& gauge, float value);
-    uint16_t valueToColor(const GaugeConfig& gauge, float value);
 
-    // Trig helpers for LovyanGFX angle convention (0°=top, CW)
-    static inline float arcX(int cx, int r, float deg) {
+    // Trig: 0 deg = top (12 o'clock), clockwise positive
+    static inline float px(int cx, int r, float deg) {
         return cx + r * sinf(deg * DEG_TO_RAD);
     }
-    static inline float arcY(int cy, int r, float deg) {
+    static inline float py(int cy, int r, float deg) {
         return cy - r * cosf(deg * DEG_TO_RAD);
     }
 };
