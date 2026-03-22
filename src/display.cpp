@@ -210,18 +210,22 @@ void GaugeDisplay::drawSweepArc(const GaugeConfig& gauge, float value) {
     frac = constrain(frac, 0.0f, 1.0f);
 
     float endDeg = ARC_START + ARC_SWEEP * frac;
-    float startMod = fmodf(ARC_START, 360.0f);
-    float endMod = fmodf(endDeg, 360.0f);
 
-    // Multi-layer neon glow (outer to inner, faint to bright)
-    _sprite.fillArc(CX, CY, R_SWEEP_OUT + 4, R_SWEEP_IN - 4, startMod, endMod, C_GLOW_RED1);
-    _sprite.fillArc(CX, CY, R_SWEEP_OUT + 2, R_SWEEP_IN - 2, startMod, endMod, C_GLOW_RED2);
+    // Helper: draw all 4 glow/arc layers for a given angular span
+    auto drawLayers = [&](float s, float e) {
+        _sprite.fillArc(CX, CY, R_SWEEP_OUT + 4, R_SWEEP_IN - 4, s, e, C_GLOW_RED1);
+        _sprite.fillArc(CX, CY, R_SWEEP_OUT + 2, R_SWEEP_IN - 2, s, e, C_GLOW_RED2);
+        _sprite.fillArc(CX, CY, R_SWEEP_OUT, R_SWEEP_IN, s, e, C_RED);
+        _sprite.fillArc(CX, CY, R_SWEEP_OUT - 2, R_SWEEP_IN + 2, s, e, C_ORANGE);
+    };
 
-    // Main red sweep arc
-    _sprite.fillArc(CX, CY, R_SWEEP_OUT, R_SWEEP_IN, startMod, endMod, C_RED);
-
-    // Hot orange core line for neon effect
-    _sprite.fillArc(CX, CY, R_SWEEP_OUT - 2, R_SWEEP_IN + 2, startMod, endMod, C_ORANGE);
+    if (endDeg > 360.0f) {
+        // Arc crosses 360°: split into two segments to avoid fillArc wrap issue
+        drawLayers(ARC_START, 360.0f);
+        drawLayers(0.0f, endDeg - 360.0f);
+    } else {
+        drawLayers(ARC_START, endDeg);
+    }
 }
 
 // =============================================================================

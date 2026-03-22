@@ -100,7 +100,7 @@ void loop() {
         const GaugeConfig& gauge = GAUGES[currentGauge];
         uint8_t dataA = 0, dataB = 0;
 
-        if (obd2.requestPID(gauge.pid, &dataA, &dataB, 50)) {
+        if (obd2.requestPID(gauge.mode, gauge.pid, &dataA, &dataB, 50)) {
             currentValue = decodeOBD2(gauge, dataA, dataB);
         }
 

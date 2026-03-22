@@ -25,23 +25,38 @@ void OBD2::end() {
     }
 }
 
-void OBD2::sendRequest(uint8_t pid) {
+void OBD2::sendRequest(uint8_t mode, uint16_t pid) {
     CanFrame frame = {};
     frame.identifier = OBD2_REQUEST_ID;
     frame.extd = 0;
     frame.data_length_code = 8;
-    frame.data[0] = 0x02;  // Number of additional bytes
-    frame.data[1] = 0x01;  // Mode 01 (current data)
-    frame.data[2] = pid;   // PID
-    frame.data[3] = 0xAA;  // Padding (avoid bit-stuffing)
-    frame.data[4] = 0xAA;
-    frame.data[5] = 0xAA;
-    frame.data[6] = 0xAA;
-    frame.data[7] = 0xAA;
+
+    if (mode == 0x22) {
+        // Mode 22 (Enhanced): 3 additional bytes (mode + 2-byte PID)
+        frame.data[0] = 0x03;
+        frame.data[1] = 0x22;
+        frame.data[2] = (pid >> 8) & 0xFF;  // PID high byte
+        frame.data[3] = pid & 0xFF;          // PID low byte
+        frame.data[4] = 0xAA;
+        frame.data[5] = 0xAA;
+        frame.data[6] = 0xAA;
+        frame.data[7] = 0xAA;
+    } else {
+        // Mode 01 (Standard): 2 additional bytes (mode + 1-byte PID)
+        frame.data[0] = 0x02;
+        frame.data[1] = 0x01;
+        frame.data[2] = pid & 0xFF;
+        frame.data[3] = 0xAA;
+        frame.data[4] = 0xAA;
+        frame.data[5] = 0xAA;
+        frame.data[6] = 0xAA;
+        frame.data[7] = 0xAA;
+    }
+
     ESP32Can.writeFrame(frame);
 }
 
-bool OBD2::requestPID(uint8_t pid, uint8_t* dataA, uint8_t* dataB, uint32_t timeoutMs) {
+bool OBD2::requestPID(uint8_t mode, uint16_t pid, uint8_t* dataA, uint8_t* dataB, uint32_t timeoutMs) {
     if (!_initialized) return false;
 
     // Flush any pending frames first
@@ -49,7 +64,7 @@ bool OBD2::requestPID(uint8_t pid, uint8_t* dataA, uint8_t* dataB, uint32_t time
     while (ESP32Can.readFrame(flush, 0)) { /* discard */ }
 
     // Send the request
-    sendRequest(pid);
+    sendRequest(mode, pid);
 
     // Wait for matching response
     uint32_t start = millis();
@@ -60,13 +75,26 @@ bool OBD2::requestPID(uint8_t pid, uint8_t* dataA, uint8_t* dataB, uint32_t time
             if (rxFrame.identifier >= OBD2_RESPONSE_ID &&
                 rxFrame.identifier <= 0x7EF) {
 
-                // Verify this is a Mode 01 response (0x41) for our PID
-                if (rxFrame.data[1] == 0x41 && rxFrame.data[2] == pid) {
-                    *dataA = rxFrame.data[3];
-                    *dataB = rxFrame.data[4];
-                    _connected = true;
-                    _errorCount = 0;
-                    return true;
+                if (mode == 0x22) {
+                    // Mode 22 response: 0x62, PID_H, PID_L, A, B, ...
+                    if (rxFrame.data[1] == 0x62 &&
+                        rxFrame.data[2] == ((pid >> 8) & 0xFF) &&
+                        rxFrame.data[3] == (pid & 0xFF)) {
+                        *dataA = rxFrame.data[4];
+                        *dataB = rxFrame.data[5];
+                        _connected = true;
+                        _errorCount = 0;
+                        return true;
+                    }
+                } else {
+                    // Mode 01 response: 0x41, PID, A, B, ...
+                    if (rxFrame.data[1] == 0x41 && rxFrame.data[2] == (pid & 0xFF)) {
+                        *dataA = rxFrame.data[3];
+                        *dataB = rxFrame.data[4];
+                        _connected = true;
+                        _errorCount = 0;
+                        return true;
+                    }
                 }
             }
         }
