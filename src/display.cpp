@@ -32,9 +32,15 @@ static constexpr uint16_t C_DKGRAY   = 0x2104;   // Very dark gray for face
 static constexpr uint16_t C_GRAY     = 0x4A49;   // Tick minor color
 static constexpr uint16_t C_WHITE    = 0xFFFF;
 static constexpr uint16_t C_RED      = 0xF800;
-static constexpr uint16_t C_DKRED    = 0x6000;   // Dark red for glow
 static constexpr uint16_t C_ORANGE   = 0xFB20;   // Orange for needle/ring center
-static constexpr uint16_t C_DKORANGE = 0x8200;   // Dim orange for ring glow
+static constexpr uint16_t C_YELLOW   = 0xFFE0;   // Yellow for center ring highlight
+
+// Glow palette (brighter than before so they're visible on hardware)
+static constexpr uint16_t C_GLOW_RED1 = 0x3000;  // Outermost red glow (faint)
+static constexpr uint16_t C_GLOW_RED2 = 0x7800;  // Mid red glow
+static constexpr uint16_t C_GLOW_RED3 = 0xB000;  // Inner red glow (bright)
+static constexpr uint16_t C_GLOW_ORG1 = 0x4100;  // Faint orange glow
+static constexpr uint16_t C_GLOW_ORG2 = 0xC340;  // Brighter orange glow
 
 // =============================================================================
 // Helpers
@@ -204,14 +210,18 @@ void GaugeDisplay::drawSweepArc(const GaugeConfig& gauge, float value) {
     frac = constrain(frac, 0.0f, 1.0f);
 
     float endDeg = ARC_START + ARC_SWEEP * frac;
+    float startMod = fmodf(ARC_START, 360.0f);
+    float endMod = fmodf(endDeg, 360.0f);
 
-    // Outer glow layer (wider, dimmer)
-    _sprite.fillArc(CX, CY, R_SWEEP_OUT + 2, R_SWEEP_IN - 2,
-                    fmodf(ARC_START, 360.0f), fmodf(endDeg, 360.0f), C_DKRED);
+    // Multi-layer neon glow (outer to inner, faint to bright)
+    _sprite.fillArc(CX, CY, R_SWEEP_OUT + 4, R_SWEEP_IN - 4, startMod, endMod, C_GLOW_RED1);
+    _sprite.fillArc(CX, CY, R_SWEEP_OUT + 2, R_SWEEP_IN - 2, startMod, endMod, C_GLOW_RED2);
 
     // Main red sweep arc
-    _sprite.fillArc(CX, CY, R_SWEEP_OUT, R_SWEEP_IN,
-                    fmodf(ARC_START, 360.0f), fmodf(endDeg, 360.0f), C_RED);
+    _sprite.fillArc(CX, CY, R_SWEEP_OUT, R_SWEEP_IN, startMod, endMod, C_RED);
+
+    // Hot orange core line for neon effect
+    _sprite.fillArc(CX, CY, R_SWEEP_OUT - 2, R_SWEEP_IN + 2, startMod, endMod, C_ORANGE);
 }
 
 // =============================================================================
@@ -225,27 +235,32 @@ void GaugeDisplay::drawNeedle(float angleDeg) {
     float tailY = py(CY, R_TAIL, angleDeg + 180.0f);
 
     float perpDeg = angleDeg + 90.0f;
+    float sinP = sinf(perpDeg * DEG_TO_RAD);
+    float cosP = cosf(perpDeg * DEG_TO_RAD);
 
-    // Glow layer (wider, dimmer)
-    float gw = 5.0f;
-    float g1x = CX + gw * sinf(perpDeg * DEG_TO_RAD);
-    float g1y = CY - gw * cosf(perpDeg * DEG_TO_RAD);
-    float g2x = CX - gw * sinf(perpDeg * DEG_TO_RAD);
-    float g2y = CY + gw * cosf(perpDeg * DEG_TO_RAD);
-    _sprite.fillTriangle((int)tipX, (int)tipY, (int)g1x, (int)g1y, (int)g2x, (int)g2y, C_DKRED);
-    _sprite.fillTriangle((int)tailX, (int)tailY, (int)g1x, (int)g1y, (int)g2x, (int)g2y, C_DKRED);
+    // Outer glow (wide, faint red)
+    float gw = 7.0f;
+    float g1x = CX + gw * sinP, g1y = CY - gw * cosP;
+    float g2x = CX - gw * sinP, g2y = CY + gw * cosP;
+    _sprite.fillTriangle((int)tipX, (int)tipY, (int)g1x, (int)g1y, (int)g2x, (int)g2y, C_GLOW_RED1);
+    _sprite.fillTriangle((int)tailX, (int)tailY, (int)g1x, (int)g1y, (int)g2x, (int)g2y, C_GLOW_RED1);
 
-    // Main needle (narrower, bright)
+    // Inner glow (brighter red)
+    gw = 5.0f;
+    g1x = CX + gw * sinP; g1y = CY - gw * cosP;
+    g2x = CX - gw * sinP; g2y = CY + gw * cosP;
+    _sprite.fillTriangle((int)tipX, (int)tipY, (int)g1x, (int)g1y, (int)g2x, (int)g2y, C_GLOW_RED2);
+    _sprite.fillTriangle((int)tailX, (int)tailY, (int)g1x, (int)g1y, (int)g2x, (int)g2y, C_GLOW_RED2);
+
+    // Main needle (bright orange)
     float nw = 2.5f;
-    float n1x = CX + nw * sinf(perpDeg * DEG_TO_RAD);
-    float n1y = CY - nw * cosf(perpDeg * DEG_TO_RAD);
-    float n2x = CX - nw * sinf(perpDeg * DEG_TO_RAD);
-    float n2y = CY + nw * cosf(perpDeg * DEG_TO_RAD);
+    float n1x = CX + nw * sinP, n1y = CY - nw * cosP;
+    float n2x = CX - nw * sinP, n2y = CY + nw * cosP;
     _sprite.fillTriangle((int)tipX, (int)tipY, (int)n1x, (int)n1y, (int)n2x, (int)n2y, C_ORANGE);
     _sprite.fillTriangle((int)tailX, (int)tailY, (int)n1x, (int)n1y, (int)n2x, (int)n2y, C_ORANGE);
 
-    // Bright center line
-    _sprite.drawLine(CX, CY, (int)tipX, (int)tipY, C_ORANGE);
+    // Hot center line (yellow core for neon pop)
+    _sprite.drawLine(CX, CY, (int)tipX, (int)tipY, C_YELLOW);
 }
 
 // =============================================================================
@@ -253,12 +268,14 @@ void GaugeDisplay::drawNeedle(float angleDeg) {
 // =============================================================================
 
 void GaugeDisplay::drawCenterRing() {
-    // Outer glow (dim)
-    _sprite.fillArc(CX, CY, R_RING_OUT + 4, R_RING_IN - 4, 0, 360, C_DKRED);
-    // Mid glow
-    _sprite.fillArc(CX, CY, R_RING_OUT + 2, R_RING_IN - 2, 0, 360, C_DKORANGE);
-    // Main ring
+    // Layered neon glow (outer to inner)
+    _sprite.fillArc(CX, CY, R_RING_OUT + 6, R_RING_IN - 6, 0, 360, C_GLOW_RED1);
+    _sprite.fillArc(CX, CY, R_RING_OUT + 4, R_RING_IN - 4, 0, 360, C_GLOW_ORG1);
+    _sprite.fillArc(CX, CY, R_RING_OUT + 2, R_RING_IN - 2, 0, 360, C_GLOW_ORG2);
+    // Main ring (bright orange)
     _sprite.fillArc(CX, CY, R_RING_OUT, R_RING_IN, 0, 360, C_ORANGE);
+    // Yellow highlight on inner edge
+    _sprite.fillArc(CX, CY, R_RING_OUT - 2, R_RING_IN + 2, 0, 360, C_YELLOW);
     // Inner dark fill
     _sprite.fillCircle(CX, CY, R_RING_IN - 1, C_BLACK);
     // Small center dot

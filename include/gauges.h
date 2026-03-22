@@ -40,11 +40,11 @@ constexpr int NUM_GAUGES = 8;
 const GaugeConfig GAUGES[NUM_GAUGES] = {
     //  name        units       scaleLabel       pid   min  max   warn  danger divisor divs bytes dec
     { "RPM",       "rpm",      "x1000r/min",    0x0C,  0,  8000, 5500, 6500, 1000, 8,  2,  0 },
-    { "SPEED",     "mph",      "mph",           0x0D,  0,   160,  110,  140,   20,  8, 1,  0 },
-    { "COOLANT",   "\xB0""F",  "\xB0""F",       0x05,100,   270,  210,  240,   20,  8, 1,  0 },
-    { "BOOST",     "psi",      "psi",           0x0B,  0,    37,   26,   32,    5,  7, 1,  1 },
-    { "THROTTLE",  "%",        "%",             0x11,  0,   100,   80,   95,   10, 10, 1,  0 },
-    { "LOAD",      "%",        "%",             0x04,  0,   100,   80,   95,   10, 10, 1,  0 },
-    { "INTAKE",    "\xB0""F",  "\xB0""F",       0x0F,-40,   175,  140,  165,   25,  8, 1,  0 },
-    { "VOLTAGE",   "V",        "Volts",         0x42,  8,    16,   15,   16,    1,  8, 2,  1 },
+    { "SPEED",     "mph",      "SPEED",         0x0D,  0,   160,  110,  140,    1,  8, 1,  0 },
+    { "COOLANT",   "\xB0""F",  "COOLANT",       0x05,100,   260,  210,  240,    1,  4, 1,  0 },
+    { "BOOST",     "psi",      "BOOST",         0x0B,  0,    35,   26,   32,    1,  7, 1,  1 },
+    { "THROTTLE",  "%",        "THROTTLE",      0x11,  0,   100,   80,   95,    1,  5, 1,  0 },
+    { "LOAD",      "%",        "LOAD",          0x04,  0,   100,   80,   95,    1,  5, 1,  0 },
+    { "INTAKE",    "\xB0""F",  "INTAKE",        0x0F,  0,   200,  140,  170,    1,  4, 1,  0 },
+    { "VOLTAGE",   "V",        "VOLTAGE",       0x42,  8,    16,   15,   16,    1,  8, 2,  1 },
 };
