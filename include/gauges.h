@@ -36,10 +36,8 @@ inline float decodeOBD2(const GaugeConfig& gauge, uint8_t a, uint8_t b) {
             float kpa = (256.0f * a + b) / 128.0f;
             return kpa * 0.14504f - 14.696f;
         }
-        case 0x0451: {  // Charge Air Temp (IAT2) - post-intercooler, from MAP combo sensor
-            float tempC = (float)((int16_t)(a << 8 | b)) / 64.0f;
-            return tempC * 1.8f + 32.0f;  // Convert to °F
-        }
+        case 0xF40F:    // Charge Air Temp (ACT) - post-intercooler °F
+            return ((float)a - 40.0f) * 9.0f/5.0f + 32.0f;
         default:   return (float)a;
     }
 }
@@ -55,6 +53,6 @@ const GaugeConfig GAUGES[NUM_GAUGES] = {
     { "THROTTLE",  "%",        "THROTTLE",     0x01, 0x11,    0,  100,   80,   95,    1,  5, 1,  0 },
     { "LOAD",      "%",        "LOAD",         0x01, 0x04,    0,  100,   80,   95,    1,  5, 1,  0 },
     { "IAT",       "\xB0""F",  "PRE-TURBO",    0x01, 0x0F,    0,  200,  140,  170,    1,  4, 1,  0 },
-    { "CHG AIR",   "\xB0""F",  "POST-IC",      0x22, 0x0451,  0,  300,  200,  250,    1,  6, 2,  0 },
+    { "CHG AIR",   "\xB0""F",  "POST-IC",      0x22, 0xF40F,  0,  300,  200,  250,    1,  6, 1,  0 },
     { "VOLTAGE",   "V",        "VOLTAGE",      0x01, 0x42,    8,   16,   15,   16,    1,  8, 2,  1 },
 };

@@ -209,7 +209,9 @@ void GaugeDisplay::drawSweepArc(const GaugeConfig& gauge, float value) {
     float frac = (value - gauge.minVal) / (gauge.maxVal - gauge.minVal);
     frac = constrain(frac, 0.0f, 1.0f);
 
-    float endDeg = ARC_START + ARC_SWEEP * frac;
+    // Convert from our angle convention (0°=top, CW) to LovyanGFX (0°=right, CW) by subtracting 90°
+    float startDeg = ARC_START - 90.0f;              // 135°
+    float endDeg   = startDeg + ARC_SWEEP * frac;
 
     // Helper: draw all 4 glow/arc layers for a given angular span
     auto drawLayers = [&](float s, float e) {
@@ -220,11 +222,11 @@ void GaugeDisplay::drawSweepArc(const GaugeConfig& gauge, float value) {
     };
 
     if (endDeg > 360.0f) {
-        // Arc crosses 360°: split into two segments to avoid fillArc wrap issue
-        drawLayers(ARC_START, 360.0f);
+        // Arc crosses 360°: split into two segments
+        drawLayers(startDeg, 360.0f);
         drawLayers(0.0f, endDeg - 360.0f);
     } else {
-        drawLayers(ARC_START, endDeg);
+        drawLayers(startDeg, endDeg);
     }
 }
 
