@@ -36,7 +36,8 @@
 #define PIN_PWR_LIGHT   40
 
 // ---- CAN Bus (M5Stack Mini CAN Unit - TJA1051T/3) ----
-// Grove connector: White wire = TX, Yellow wire = RX
-// Connected to the two available expansion GPIOs on FPC connector
-#define PIN_CAN_TX       4
-#define PIN_CAN_RX      12
+// Connected via UART header on back of CrowPanel (4-pin 1.25mm)
+// UART header: GND, 5V, TX (GPIO 43), RX (GPIO 44)
+// Grove connector: White wire → TX, Yellow wire → RX
+#define PIN_CAN_TX      43
+#define PIN_CAN_RX      44

@@ -24,11 +24,11 @@ struct GaugeConfig {
 inline float decodeOBD2(const GaugeConfig& gauge, uint8_t a, uint8_t b) {
     switch (gauge.pid) {
         case 0x04: return a * 100.0f / 255.0f;           // Engine Load %
-        case 0x05: return (float)a - 40.0f;               // Coolant Temp C
-        case 0x0B: return (float)a;                        // MAP kPa
-        case 0x0C: return (256.0f * a + b) / 4.0f;        // RPM
-        case 0x0D: return (float)a;                        // Speed km/h
-        case 0x0F: return (float)a - 40.0f;               // Intake Temp C
+        case 0x05: return ((float)a - 40.0f) * 9.0f/5.0f + 32.0f;  // Coolant Temp °F
+        case 0x0B: return (float)a * 0.14504f;                     // MAP psi
+        case 0x0C: return (256.0f * a + b) / 4.0f;                 // RPM
+        case 0x0D: return (float)a * 0.621371f;                     // Speed mph
+        case 0x0F: return ((float)a - 40.0f) * 9.0f/5.0f + 32.0f;  // Intake Temp °F
         case 0x11: return a * 100.0f / 255.0f;            // Throttle %
         case 0x42: return (256.0f * a + b) / 1000.0f;     // Voltage V
         default:   return (float)a;
@@ -40,11 +40,11 @@ constexpr int NUM_GAUGES = 8;
 const GaugeConfig GAUGES[NUM_GAUGES] = {
     //  name        units       scaleLabel       pid   min  max   warn  danger divisor divs bytes dec
     { "RPM",       "rpm",      "x1000r/min",    0x0C,  0,  8000, 5500, 6500, 1000, 8,  2,  0 },
-    { "SPEED",     "km/h",     "km/h",          0x0D,  0,   260,  180,  220,   20, 13, 1,  0 },
-    { "COOLANT",   "\xB0""C",  "\xB0""C",       0x05, 40,   130,  100,  115,   10,  9, 1,  0 },
-    { "BOOST",     "kPa",      "kPa",           0x0B,  0,   255,  180,  220,   50,  5, 1,  0 },
+    { "SPEED",     "mph",      "mph",           0x0D,  0,   160,  110,  140,   20,  8, 1,  0 },
+    { "COOLANT",   "\xB0""F",  "\xB0""F",       0x05,100,   270,  210,  240,   20,  8, 1,  0 },
+    { "BOOST",     "psi",      "psi",           0x0B,  0,    37,   26,   32,    5,  7, 1,  1 },
     { "THROTTLE",  "%",        "%",             0x11,  0,   100,   80,   95,   10, 10, 1,  0 },
     { "LOAD",      "%",        "%",             0x04,  0,   100,   80,   95,   10, 10, 1,  0 },
-    { "INTAKE",    "\xB0""C",  "\xB0""C",       0x0F,-40,    80,   60,   75,   20,  6, 1,  0 },
+    { "INTAKE",    "\xB0""F",  "\xB0""F",       0x0F,-40,   175,  140,  165,   25,  8, 1,  0 },
     { "VOLTAGE",   "V",        "Volts",         0x42,  8,    16,   15,   16,    1,  8, 2,  1 },
 };
