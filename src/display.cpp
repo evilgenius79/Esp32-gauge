@@ -318,3 +318,145 @@ void GaugeDisplay::drawLabels(const GaugeConfig& gauge, float value) {
     _sprite.setTextColor(C_RED);
     _sprite.drawString(gauge.units, CX, CY + R_RING_OUT + 38);
 }
+
+// =============================================================================
+// DTC Menu Screens
+// =============================================================================
+
+static const char* DTC_MENU_ITEMS[] = { "SCAN CODES", "CLEAR CODES", "BACK" };
+static constexpr int DTC_MENU_COUNT = 3;
+
+void GaugeDisplay::drawDTCMenu(int selectedItem) {
+    _sprite.fillSprite(C_BLACK);
+
+    // Title
+    _sprite.setFont(&fonts::FreeSansBold9pt7b);
+    _sprite.setTextDatum(TC_DATUM);
+    _sprite.setTextColor(C_ORANGE);
+    _sprite.drawString("DIAGNOSTICS", CX, 30);
+
+    // Decorative line
+    _sprite.drawFastHLine(40, 52, 160, C_DKGRAY);
+
+    // Menu items
+    _sprite.setFont(&fonts::FreeSansBold9pt7b);
+    for (int i = 0; i < DTC_MENU_COUNT; i++) {
+        int y = 80 + i * 45;
+        if (i == selectedItem) {
+            // Highlight bar
+            _sprite.fillRoundRect(30, y - 8, 180, 32, 6, C_RED);
+            _sprite.setTextColor(C_WHITE);
+        } else {
+            _sprite.drawRoundRect(30, y - 8, 180, 32, 6, C_DKGRAY);
+            _sprite.setTextColor(C_GRAY);
+        }
+        _sprite.setTextDatum(MC_DATUM);
+        _sprite.drawString(DTC_MENU_ITEMS[i], CX, y + 8);
+    }
+
+    _sprite.pushSprite(&_tft, 0, 0);
+}
+
+void GaugeDisplay::drawDTCScanning() {
+    _sprite.fillSprite(C_BLACK);
+
+    _sprite.setFont(&fonts::FreeSansBold9pt7b);
+    _sprite.setTextDatum(MC_DATUM);
+    _sprite.setTextColor(C_ORANGE);
+    _sprite.drawString("SCANNING...", CX, CY);
+
+    _sprite.pushSprite(&_tft, 0, 0);
+}
+
+void GaugeDisplay::drawDTCResults(const DTC* dtcs, int count) {
+    _sprite.fillSprite(C_BLACK);
+    _prevValue = -99999.0f;  // Force gauge redraw when returning
+
+    // Title
+    _sprite.setFont(&fonts::FreeSansBold9pt7b);
+    _sprite.setTextDatum(TC_DATUM);
+    _sprite.setTextColor(C_ORANGE);
+    _sprite.drawString("TROUBLE CODES", CX, 15);
+
+    _sprite.drawFastHLine(40, 37, 160, C_DKGRAY);
+
+    if (count == 0) {
+        _sprite.setFont(&fonts::FreeSansBold12pt7b);
+        _sprite.setTextDatum(MC_DATUM);
+        _sprite.setTextColor(0x07E0);  // Green
+        _sprite.drawString("NO CODES", CX, CY);
+
+        _sprite.setFont(&fonts::Font2);
+        _sprite.setTextColor(C_GRAY);
+        _sprite.drawString("ALL CLEAR", CX, CY + 30);
+    } else {
+        // Show up to 6 codes on screen
+        int show = (count > 6) ? 6 : count;
+        _sprite.setFont(&fonts::FreeSansBold9pt7b);
+        _sprite.setTextDatum(MC_DATUM);
+
+        for (int i = 0; i < show; i++) {
+            int y = 50 + i * 28;
+            _sprite.setTextColor(C_RED);
+            _sprite.drawString(dtcs[i].code, CX, y);
+        }
+
+        if (count > 6) {
+            _sprite.setFont(&fonts::Font2);
+            _sprite.setTextColor(C_GRAY);
+            char more[16];
+            snprintf(more, sizeof(more), "+%d more", count - 6);
+            _sprite.drawString(more, CX, 220);
+        }
+    }
+
+    // Footer
+    _sprite.setFont(&fonts::Font2);
+    _sprite.setTextDatum(BC_DATUM);
+    _sprite.setTextColor(C_GRAY);
+    _sprite.drawString("press to return", CX, 235);
+
+    _sprite.pushSprite(&_tft, 0, 0);
+}
+
+void GaugeDisplay::drawDTCClearing() {
+    _sprite.fillSprite(C_BLACK);
+
+    _sprite.setFont(&fonts::FreeSansBold9pt7b);
+    _sprite.setTextDatum(MC_DATUM);
+    _sprite.setTextColor(C_ORANGE);
+    _sprite.drawString("CLEARING...", CX, CY);
+
+    _sprite.pushSprite(&_tft, 0, 0);
+}
+
+void GaugeDisplay::drawDTCCleared(bool success) {
+    _sprite.fillSprite(C_BLACK);
+    _prevValue = -99999.0f;
+
+    _sprite.setFont(&fonts::FreeSansBold12pt7b);
+    _sprite.setTextDatum(MC_DATUM);
+
+    if (success) {
+        _sprite.setTextColor(0x07E0);  // Green
+        _sprite.drawString("CLEARED", CX, CY - 10);
+
+        _sprite.setFont(&fonts::Font2);
+        _sprite.setTextColor(C_GRAY);
+        _sprite.drawString("codes & MIL reset", CX, CY + 20);
+    } else {
+        _sprite.setTextColor(C_RED);
+        _sprite.drawString("FAILED", CX, CY - 10);
+
+        _sprite.setFont(&fonts::Font2);
+        _sprite.setTextColor(C_GRAY);
+        _sprite.drawString("no response from ECU", CX, CY + 20);
+    }
+
+    _sprite.setFont(&fonts::Font2);
+    _sprite.setTextDatum(BC_DATUM);
+    _sprite.setTextColor(C_GRAY);
+    _sprite.drawString("press to return", CX, 235);
+
+    _sprite.pushSprite(&_tft, 0, 0);
+}

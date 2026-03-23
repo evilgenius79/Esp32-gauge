@@ -3,6 +3,7 @@
 #include <LovyanGFX.hpp>
 #include "pins.h"
 #include "gauges.h"
+#include "obd2.h"
 
 // =============================================================================
 // Display Driver - CrowPanel 1.28" GC9A01 (LovyanGFX)
@@ -66,6 +67,13 @@ public:
     void drawGauge(const GaugeConfig& gauge, float value, bool forceRedraw);
     void drawNoCanStatus();
     void setBrightness(uint8_t percent);
+
+    // DTC menu screens
+    void drawDTCMenu(int selectedItem);
+    void drawDTCScanning();
+    void drawDTCResults(const DTC* dtcs, int count);
+    void drawDTCClearing();
+    void drawDTCCleared(bool success);
 
 private:
     LGFX        _tft;
