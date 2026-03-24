@@ -27,9 +27,10 @@ bool needsFullRedraw = true;   // Force full gauge redraw on switch
 uint32_t lastPollTime = 0;
 constexpr uint32_t POLL_INTERVAL_MS = 100; // 10 Hz polling rate
 
-// Reconnect timing
-uint32_t lastReconnectTime = 0;
-constexpr uint32_t RECONNECT_INTERVAL_MS = 3000;
+// Sleep: turn off backlight after no CAN data for this long
+uint32_t lastCanDataTime = 0;
+constexpr uint32_t SLEEP_TIMEOUT_MS = 30000; // 30 seconds
+bool sleeping = false;
 
 // =============================================================================
 // Menu state machine
@@ -85,6 +86,18 @@ void loop() {
     int dir = encoder.getDirection();
     bool pressed = encoder.wasPressed();
 
+    // --- Wake from sleep on any input or CAN data ---
+    if (sleeping && (dir != 0 || pressed)) {
+        sleeping = false;
+        display.setBrightness(70);
+        needsFullRedraw = true;
+        lastCanDataTime = millis();
+        Serial.println("[SLEEP] Waking up (user input)");
+        // Consume the input so it doesn't also trigger menu/gauge switch
+        dir = 0;
+        pressed = false;
+    }
+
     switch (appState) {
 
     // =========================================================================
@@ -122,13 +135,31 @@ void loop() {
 
             if (obd2.requestPID(gauge.mode, gauge.pid, &dataA, &dataB, 50)) {
                 currentValue = decodeOBD2(gauge, dataA, dataB);
+                lastCanDataTime = now;
+
+                // Wake up if we were sleeping
+                if (sleeping) {
+                    sleeping = false;
+                    display.setBrightness(70);
+                    needsFullRedraw = true;
+                    Serial.println("[SLEEP] Waking up (CAN data)");
+                }
             }
 
-            display.drawGauge(gauge, currentValue, needsFullRedraw);
-            needsFullRedraw = false;
+            if (!sleeping) {
+                display.drawGauge(gauge, currentValue, needsFullRedraw);
+                needsFullRedraw = false;
 
-            if (!obd2.isConnected()) {
-                display.drawNoCanStatus();
+                if (!obd2.isConnected()) {
+                    display.drawNoCanStatus();
+                }
+
+                // Sleep if no CAN data for too long
+                if (now - lastCanDataTime > SLEEP_TIMEOUT_MS && lastCanDataTime > 0) {
+                    sleeping = true;
+                    display.setBrightness(0);
+                    Serial.println("[SLEEP] No CAN data - going to sleep");
+                }
             }
         }
         break;
