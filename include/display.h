@@ -71,7 +71,7 @@ public:
     // DTC menu screens
     void drawDTCMenu(int selectedItem);
     void drawDTCScanning();
-    void drawDTCResults(const DTC* dtcs, int count);
+    void drawDTCResults(const DTC* dtcs, int count, int scrollOffset = 0);
     void drawDTCClearing();
     void drawDTCCleared(bool success);
 

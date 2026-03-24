@@ -48,6 +48,7 @@ AppState appState = STATE_GAUGE;
 int menuSelection = 0;
 DTC dtcList[MAX_DTCS];
 int dtcCount = 0;
+int dtcScrollOffset = 0;
 
 void setup() {
     Serial.begin(115200);
@@ -209,7 +210,8 @@ void loop() {
             Serial.printf("[DTC]   %s\n", dtcList[i].code);
         }
 
-        display.drawDTCResults(dtcList, dtcCount);
+        dtcScrollOffset = 0;
+        display.drawDTCResults(dtcList, dtcCount, dtcScrollOffset);
         appState = STATE_DTC_RESULTS;
         break;
     }
@@ -218,6 +220,14 @@ void loop() {
     // Showing results — press to go back to menu
     // =========================================================================
     case STATE_DTC_RESULTS: {
+        // Scroll through codes with the knob
+        if (dir != 0 && dtcCount > 5) {
+            dtcScrollOffset += dir;
+            if (dtcScrollOffset < 0) dtcScrollOffset = 0;
+            if (dtcScrollOffset > dtcCount - 5) dtcScrollOffset = dtcCount - 5;
+            display.drawDTCResults(dtcList, dtcCount, dtcScrollOffset);
+        }
+
         if (pressed) {
             appState = STATE_DTC_MENU;
             menuSelection = 0;

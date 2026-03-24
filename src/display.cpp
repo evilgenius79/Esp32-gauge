@@ -368,17 +368,17 @@ void GaugeDisplay::drawDTCScanning() {
     _sprite.pushSprite(&_tft, 0, 0);
 }
 
-void GaugeDisplay::drawDTCResults(const DTC* dtcs, int count) {
+void GaugeDisplay::drawDTCResults(const DTC* dtcs, int count, int scrollOffset) {
     _sprite.fillSprite(C_BLACK);
     _prevValue = -99999.0f;  // Force gauge redraw when returning
 
-    // Title
+    // Title — same Y as other menus so it doesn't clip on the round display
     _sprite.setFont(&fonts::FreeSansBold9pt7b);
     _sprite.setTextDatum(TC_DATUM);
     _sprite.setTextColor(C_ORANGE);
-    _sprite.drawString("TROUBLE CODES", CX, 15);
+    _sprite.drawString("TROUBLE CODES", CX, 30);
 
-    _sprite.drawFastHLine(40, 37, 160, C_DKGRAY);
+    _sprite.drawFastHLine(40, 52, 160, C_DKGRAY);
 
     if (count == 0) {
         _sprite.setFont(&fonts::FreeSansBold12pt7b);
@@ -390,23 +390,33 @@ void GaugeDisplay::drawDTCResults(const DTC* dtcs, int count) {
         _sprite.setTextColor(C_GRAY);
         _sprite.drawString("ALL CLEAR", CX, CY + 30);
     } else {
-        // Show up to 6 codes on screen
-        int show = (count > 6) ? 6 : count;
+        // Scrollable list: show up to 5 codes starting from scrollOffset
+        constexpr int VISIBLE_CODES = 5;
+        constexpr int CODE_START_Y  = 65;
+        constexpr int CODE_SPACING  = 28;
+
+        int show = (count - scrollOffset > VISIBLE_CODES)
+                     ? VISIBLE_CODES : (count - scrollOffset);
+
         _sprite.setFont(&fonts::FreeSansBold9pt7b);
         _sprite.setTextDatum(MC_DATUM);
 
         for (int i = 0; i < show; i++) {
-            int y = 50 + i * 28;
+            int y = CODE_START_Y + i * CODE_SPACING;
             _sprite.setTextColor(C_RED);
-            _sprite.drawString(dtcs[i].code, CX, y);
+            _sprite.drawString(dtcs[scrollOffset + i].code, CX, y);
         }
 
-        if (count > 6) {
-            _sprite.setFont(&fonts::Font2);
-            _sprite.setTextColor(C_GRAY);
-            char more[16];
-            snprintf(more, sizeof(more), "+%d more", count - 6);
-            _sprite.drawString(more, CX, 220);
+        // Scroll indicators
+        _sprite.setFont(&fonts::Font2);
+        _sprite.setTextColor(C_GRAY);
+        if (scrollOffset > 0) {
+            _sprite.setTextDatum(TC_DATUM);
+            _sprite.drawString("^ more ^", CX, 54);
+        }
+        if (scrollOffset + VISIBLE_CODES < count) {
+            _sprite.setTextDatum(BC_DATUM);
+            _sprite.drawString("v more v", CX, 210);
         }
     }
 
@@ -414,7 +424,7 @@ void GaugeDisplay::drawDTCResults(const DTC* dtcs, int count) {
     _sprite.setFont(&fonts::Font2);
     _sprite.setTextDatum(BC_DATUM);
     _sprite.setTextColor(C_GRAY);
-    _sprite.drawString("press to return", CX, 235);
+    _sprite.drawString("press to return", CX, 232);
 
     _sprite.pushSprite(&_tft, 0, 0);
 }
