@@ -2,5 +2,6 @@
 .vscode
 *.o
 *.bin
+!firmware/*.bin
 *.elf
 *.map
