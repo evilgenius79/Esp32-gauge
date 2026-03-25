@@ -84,6 +84,18 @@ public:
     void drawAllGauges(const int indices[4], const float values[4], bool forceRedraw);
     void drawSingleGauge(int slot, int gaugeIdx, float value, bool forceRedraw);
     int  touchedGauge();   // Returns tapped slot 0-3, or -1
+    void drawDTCButton();  // Draw DTC button at center of grid
+    bool dtcButtonTapped(); // Returns true if DTC button was tapped
+
+    // DTC screens (fullscreen overlay)
+    void drawDTCMenuTab5(int selectedItem);
+    int  dtcMenuTapped();  // Returns tapped menu item 0-2, or -1
+    void drawDTCScanningTab5();
+    void drawDTCResultsTab5(const DTC* dtcs, int count, int scrollOffset = 0);
+    int  dtcResultsScrollOrBack(); // Returns: -2=back, -1=scroll up, 1=scroll down, 0=none
+    void drawDTCClearingTab5();
+    void drawDTCClearedTab5(bool success);
+    bool dtcBackTapped();  // Generic "tap anywhere to go back"
 
 #else
     // --- CrowPanel: single gauge + DTC menus ---
@@ -116,6 +128,12 @@ private:
 
     int slotX(int slot) const { return (slot % 2) * CELL_W + (CELL_W - GAUGE_SIZE) / 2; }
     int slotY(int slot) const { return (slot / 2) * CELL_H + (CELL_H - GAUGE_SIZE) / 2; }
+
+    // DTC button at center intersection — 80x80 rounded rect
+    static constexpr int DTC_BTN_W = 80;
+    static constexpr int DTC_BTN_H = 80;
+    static constexpr int DTC_BTN_X = (SCREEN_W - DTC_BTN_W) / 2;
+    static constexpr int DTC_BTN_Y = (SCREEN_H - DTC_BTN_H) / 2;
 
 #else
     LGFX        _tft;

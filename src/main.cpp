@@ -37,6 +37,21 @@ float gaugeValues[4] = {0, 0, 0, 0};
 bool needsFullRedraw = true;
 int  pollSlot = 0;  // Round-robin: poll one gauge per cycle
 
+// DTC state machine (Tab5)
+enum Tab5State {
+    T5_GAUGE,
+    T5_DTC_MENU,
+    T5_DTC_SCAN,
+    T5_DTC_RESULTS,
+    T5_DTC_CLEAR,
+    T5_DTC_CLEARED,
+};
+
+Tab5State tab5State = T5_GAUGE;
+DTC dtcList[MAX_DTCS];
+int dtcCount = 0;
+int dtcScrollOffset = 0;
+
 void setup() {
     auto cfg = M5.config();
     M5.begin(cfg);
@@ -59,69 +74,159 @@ void setup() {
     }
 
     display.drawAllGauges(gaugeIndices, gaugeValues, true);
-    Serial.println("[INIT] Ready! Tap a gauge to cycle it.");
+    display.drawDTCButton();
+    Serial.println("[INIT] Ready! Tap gauge to cycle, tap DTC for diagnostics.");
 }
 
 void loop() {
     M5.update();
 
-    // Touch: tap a gauge to cycle its PID
-    int tapped = display.touchedGauge();
-    if (tapped >= 0) {
-        if (sleeping) {
-            // Wake on touch
-            sleeping = false;
-            display.setBrightness(70);
-            needsFullRedraw = true;
-            lastCanDataTime = millis();
-            Serial.println("[SLEEP] Waking up (touch)");
-        } else {
-            gaugeIndices[tapped] = (gaugeIndices[tapped] + 1) % NUM_GAUGES;
-            gaugeValues[tapped] = GAUGES[gaugeIndices[tapped]].minVal;
-            Serial.printf("[TOUCH] Slot %d → %s\n", tapped, GAUGES[gaugeIndices[tapped]].name);
-            display.drawSingleGauge(tapped, gaugeIndices[tapped], gaugeValues[tapped], true);
-        }
-    }
+    switch (tab5State) {
 
-    // Poll one gauge per cycle (round-robin, ~2.5 Hz per gauge)
-    uint32_t now = millis();
-    if (now - lastPollTime >= POLL_INTERVAL_MS) {
-        lastPollTime = now;
-
-        const GaugeConfig& g = GAUGES[gaugeIndices[pollSlot]];
-        uint8_t a = 0, b = 0;
-
-        if (obd2.requestPID(g.mode, g.pid, &a, &b, 50)) {
-            gaugeValues[pollSlot] = decodeOBD2(g, a, b);
-            lastCanDataTime = now;
-
+    case T5_GAUGE: {
+        // Check DTC button first
+        if (display.dtcButtonTapped()) {
             if (sleeping) {
                 sleeping = false;
                 display.setBrightness(70);
                 needsFullRedraw = true;
-                Serial.println("[SLEEP] Waking up (CAN data)");
-            }
-        }
-
-        if (!sleeping) {
-            if (needsFullRedraw) {
-                display.drawAllGauges(gaugeIndices, gaugeValues, true);
-                needsFullRedraw = false;
+                lastCanDataTime = millis();
+                Serial.println("[SLEEP] Waking up (DTC button)");
             } else {
-                display.drawSingleGauge(pollSlot, gaugeIndices[pollSlot],
-                                        gaugeValues[pollSlot], false);
-            }
-
-            // Sleep if no CAN data for too long
-            if (now - lastCanDataTime > SLEEP_TIMEOUT_MS && lastCanDataTime > 0) {
-                sleeping = true;
-                display.setBrightness(0);
-                Serial.println("[SLEEP] No CAN data - going to sleep");
+                Serial.println("[DTC] Opening diagnostics menu");
+                tab5State = T5_DTC_MENU;
+                display.drawDTCMenuTab5(-1);
+                break;
             }
         }
 
-        pollSlot = (pollSlot + 1) % 4;
+        // Touch: tap a gauge to cycle its PID
+        int tapped = display.touchedGauge();
+        if (tapped >= 0) {
+            if (sleeping) {
+                sleeping = false;
+                display.setBrightness(70);
+                needsFullRedraw = true;
+                lastCanDataTime = millis();
+                Serial.println("[SLEEP] Waking up (touch)");
+            } else {
+                gaugeIndices[tapped] = (gaugeIndices[tapped] + 1) % NUM_GAUGES;
+                gaugeValues[tapped] = GAUGES[gaugeIndices[tapped]].minVal;
+                Serial.printf("[TOUCH] Slot %d -> %s\n", tapped, GAUGES[gaugeIndices[tapped]].name);
+                display.drawSingleGauge(tapped, gaugeIndices[tapped], gaugeValues[tapped], true);
+                display.drawDTCButton();
+            }
+        }
+
+        // Poll one gauge per cycle (round-robin, ~2.5 Hz per gauge)
+        uint32_t now = millis();
+        if (now - lastPollTime >= POLL_INTERVAL_MS) {
+            lastPollTime = now;
+
+            const GaugeConfig& g = GAUGES[gaugeIndices[pollSlot]];
+            uint8_t a = 0, b = 0;
+
+            if (obd2.requestPID(g.mode, g.pid, &a, &b, 50)) {
+                gaugeValues[pollSlot] = decodeOBD2(g, a, b);
+                lastCanDataTime = now;
+
+                if (sleeping) {
+                    sleeping = false;
+                    display.setBrightness(70);
+                    needsFullRedraw = true;
+                    Serial.println("[SLEEP] Waking up (CAN data)");
+                }
+            }
+
+            if (!sleeping) {
+                if (needsFullRedraw) {
+                    display.drawAllGauges(gaugeIndices, gaugeValues, true);
+                    display.drawDTCButton();
+                    needsFullRedraw = false;
+                } else {
+                    display.drawSingleGauge(pollSlot, gaugeIndices[pollSlot],
+                                            gaugeValues[pollSlot], false);
+                    display.drawDTCButton();
+                }
+
+                if (now - lastCanDataTime > SLEEP_TIMEOUT_MS && lastCanDataTime > 0) {
+                    sleeping = true;
+                    display.setBrightness(0);
+                    Serial.println("[SLEEP] No CAN data - going to sleep");
+                }
+            }
+
+            pollSlot = (pollSlot + 1) % 4;
+        }
+        break;
     }
+
+    case T5_DTC_MENU: {
+        int item = display.dtcMenuTapped();
+        if (item == 0) {
+            Serial.println("[DTC] Scanning for trouble codes...");
+            display.drawDTCScanningTab5();
+            tab5State = T5_DTC_SCAN;
+        } else if (item == 1) {
+            Serial.println("[DTC] Clearing trouble codes...");
+            display.drawDTCClearingTab5();
+            tab5State = T5_DTC_CLEAR;
+        } else if (item == 2) {
+            Serial.println("[DTC] Returning to gauges");
+            tab5State = T5_GAUGE;
+            needsFullRedraw = true;
+        }
+        break;
+    }
+
+    case T5_DTC_SCAN: {
+        dtcCount = obd2.scanDTCs(dtcList, MAX_DTCS);
+        if (dtcCount < 0) dtcCount = 0;
+
+        Serial.printf("[DTC] Found %d codes\n", dtcCount);
+        for (int i = 0; i < dtcCount; i++) {
+            Serial.printf("[DTC]   %s\n", dtcList[i].code);
+        }
+
+        dtcScrollOffset = 0;
+        display.drawDTCResultsTab5(dtcList, dtcCount, dtcScrollOffset);
+        tab5State = T5_DTC_RESULTS;
+        break;
+    }
+
+    case T5_DTC_RESULTS: {
+        int action = display.dtcResultsScrollOrBack();
+        if (action == -2) {
+            // Back to menu
+            tab5State = T5_DTC_MENU;
+            display.drawDTCMenuTab5(-1);
+        } else if (action == -1 && dtcScrollOffset > 0) {
+            dtcScrollOffset--;
+            display.drawDTCResultsTab5(dtcList, dtcCount, dtcScrollOffset);
+        } else if (action == 1 && dtcCount > 8 && dtcScrollOffset < dtcCount - 8) {
+            dtcScrollOffset++;
+            display.drawDTCResultsTab5(dtcList, dtcCount, dtcScrollOffset);
+        }
+        break;
+    }
+
+    case T5_DTC_CLEAR: {
+        bool ok = obd2.clearDTCs();
+        Serial.printf("[DTC] Clear %s\n", ok ? "OK" : "FAILED");
+        display.drawDTCClearedTab5(ok);
+        tab5State = T5_DTC_CLEARED;
+        break;
+    }
+
+    case T5_DTC_CLEARED: {
+        if (display.dtcBackTapped()) {
+            tab5State = T5_DTC_MENU;
+            display.drawDTCMenuTab5(-1);
+        }
+        break;
+    }
+
+    } // end switch
 }
 
 
