@@ -1,13 +1,25 @@
 #pragma once
 
+#ifdef TARGET_TAB5
+#include <M5GFX.h>
+#else
 #include <LovyanGFX.hpp>
+#endif
 #include "pins.h"
 #include "gauges.h"
 #include "obd2.h"
+#include "gauge_render.h"
+
+#ifdef TARGET_TAB5
+#include <M5Unified.h>
+#endif
 
 // =============================================================================
-// Display Driver - CrowPanel 1.28" GC9A01 (LovyanGFX)
+// CrowPanel 1.28" GC9A01 Display Driver (LovyanGFX)
+// Only compiled for the CrowPanel target
 // =============================================================================
+
+#ifndef TARGET_TAB5
 
 class LGFX : public lgfx::LGFX_Device {
     lgfx::Panel_GC9A01 _panel;
@@ -56,17 +68,27 @@ public:
     }
 };
 
+#endif // !TARGET_TAB5
+
 // =============================================================================
-// Gauge Renderer - Matches reference tachometer style
-// Dark face, white ticks/numbers, red sweep arc, glowing needle & center ring
+// Gauge Display — adapts to CrowPanel (single gauge) or Tab5 (multi-gauge)
 // =============================================================================
 
 class GaugeDisplay {
 public:
     void begin();
+    void setBrightness(uint8_t percent);
+
+#ifdef TARGET_TAB5
+    // --- Tab5: 4-gauge dashboard ---
+    void drawAllGauges(const int indices[4], const float values[4], bool forceRedraw);
+    void drawSingleGauge(int slot, int gaugeIdx, float value, bool forceRedraw);
+    int  touchedGauge();   // Returns tapped slot 0-3, or -1
+
+#else
+    // --- CrowPanel: single gauge + DTC menus ---
     void drawGauge(const GaugeConfig& gauge, float value, bool forceRedraw);
     void drawNoCanStatus();
-    void setBrightness(uint8_t percent);
 
     // DTC menu screens
     void drawDTCMenu(int selectedItem);
@@ -74,27 +96,31 @@ public:
     void drawDTCResults(const DTC* dtcs, int count, int scrollOffset = 0);
     void drawDTCClearing();
     void drawDTCCleared(bool success);
+#endif
 
 private:
+    GaugeLayout _layout;
+
+#ifdef TARGET_TAB5
+    LGFX_Sprite _sprites[4];
+    float _prevValues[4]  = {-99999, -99999, -99999, -99999};
+    int   _prevGaugeIdx[4] = {-1, -1, -1, -1};
+    uint32_t _lastTouchTime = 0;
+
+    // 2x2 grid layout: each cell 640x360, gauge 320x320 centered
+    static constexpr int SCREEN_W   = 1280;
+    static constexpr int SCREEN_H   = 720;
+    static constexpr int CELL_W     = 640;
+    static constexpr int CELL_H     = 360;
+    static constexpr int GAUGE_SIZE = 320;  // Sprite size per gauge
+
+    int slotX(int slot) const { return (slot % 2) * CELL_W + (CELL_W - GAUGE_SIZE) / 2; }
+    int slotY(int slot) const { return (slot / 2) * CELL_H + (CELL_H - GAUGE_SIZE) / 2; }
+
+#else
     LGFX        _tft;
     LGFX_Sprite _sprite;
-
-    float _prevValue     = -99999.0f;
-    int   _prevGaugeIdx  = -1;
-
-    void drawFace(const GaugeConfig& gauge);
-    void drawSweepArc(const GaugeConfig& gauge, float value);
-    void drawNeedle(float angleDeg);
-    void drawCenterRing();
-    void drawLabels(const GaugeConfig& gauge, float value);
-
-    float valueToAngle(const GaugeConfig& gauge, float value);
-
-    // Trig: 0 deg = top (12 o'clock), clockwise positive
-    static inline float px(int cx, int r, float deg) {
-        return cx + r * sinf(deg * DEG_TO_RAD);
-    }
-    static inline float py(int cy, int r, float deg) {
-        return cy - r * cosf(deg * DEG_TO_RAD);
-    }
+    float _prevValue    = -99999.0f;
+    int   _prevGaugeIdx = -1;
+#endif
 };

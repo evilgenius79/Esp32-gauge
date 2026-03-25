@@ -3,45 +3,150 @@
 #include "gauges.h"
 #include "display.h"
 #include "obd2.h"
-#include "encoder.h"
 
 // =============================================================================
-// ESP32 OBD2 Gauge - Main Program
+// ESP32 OBD2 Gauge — Dual-target main
 //
-// CrowPanel 1.28" HMI ESP32-S3 Rotary Display + M5Stack Mini CAN Unit
-//
-// Turn the rotary knob to switch between gauges.
-// Only the currently displayed gauge polls the CAN bus.
-// Press the knob to open the diagnostics menu (scan/clear DTCs).
+// CrowPanel 1.28": Single gauge, rotary encoder, DTC diagnostics
+// M5Stack Tab5:    Four-gauge 2x2 dashboard, touch to cycle gauges
 // =============================================================================
 
-GaugeDisplay   display;
-OBD2           obd2;
-RotaryEncoder  encoder;
+GaugeDisplay display;
+OBD2         obd2;
 
-int currentGauge = 0;          // Index into GAUGES[]
-float currentValue = 0.0f;     // Latest decoded value
-bool needsFullRedraw = true;   // Force full gauge redraw on switch
+// Shared: sleep on CAN bus inactivity
+uint32_t lastCanDataTime = 0;
+constexpr uint32_t SLEEP_TIMEOUT_MS = 30000;  // 30 seconds
+bool sleeping = false;
 
 // Poll timing
 uint32_t lastPollTime = 0;
-constexpr uint32_t POLL_INTERVAL_MS = 100; // 10 Hz polling rate
+constexpr uint32_t POLL_INTERVAL_MS = 100;     // 10 Hz
 
-// Sleep: turn off backlight after no CAN data for this long
-uint32_t lastCanDataTime = 0;
-constexpr uint32_t SLEEP_TIMEOUT_MS = 30000; // 30 seconds
-bool sleeping = false;
 
-// =============================================================================
+// #############################################################################
+//  TAB5 — 4-gauge dashboard with touch input
+// #############################################################################
+
+#ifdef TARGET_TAB5
+
+#include <M5Unified.h>
+
+int  gaugeIndices[4] = {0, 1, 3, 4};  // RPM, Speed, Boost, Throttle
+float gaugeValues[4] = {0, 0, 0, 0};
+bool needsFullRedraw = true;
+int  pollSlot = 0;  // Round-robin: poll one gauge per cycle
+
+void setup() {
+    auto cfg = M5.config();
+    M5.begin(cfg);
+
+    Serial.begin(115200);
+    Serial.println("\n=== ESP32 OBD2 Multi-Gauge (Tab5) ===");
+
+    display.begin();
+
+    Serial.println("[INIT] CAN bus...");
+    if (obd2.begin(PIN_CAN_TX, PIN_CAN_RX)) {
+        Serial.println("[INIT] CAN bus OK");
+    } else {
+        Serial.println("[INIT] CAN bus FAILED - check wiring");
+    }
+
+    // Init values to gauge minimums
+    for (int i = 0; i < 4; i++) {
+        gaugeValues[i] = GAUGES[gaugeIndices[i]].minVal;
+    }
+
+    display.drawAllGauges(gaugeIndices, gaugeValues, true);
+    Serial.println("[INIT] Ready! Tap a gauge to cycle it.");
+}
+
+void loop() {
+    M5.update();
+
+    // Touch: tap a gauge to cycle its PID
+    int tapped = display.touchedGauge();
+    if (tapped >= 0) {
+        if (sleeping) {
+            // Wake on touch
+            sleeping = false;
+            display.setBrightness(70);
+            needsFullRedraw = true;
+            lastCanDataTime = millis();
+            Serial.println("[SLEEP] Waking up (touch)");
+        } else {
+            gaugeIndices[tapped] = (gaugeIndices[tapped] + 1) % NUM_GAUGES;
+            gaugeValues[tapped] = GAUGES[gaugeIndices[tapped]].minVal;
+            Serial.printf("[TOUCH] Slot %d → %s\n", tapped, GAUGES[gaugeIndices[tapped]].name);
+            display.drawSingleGauge(tapped, gaugeIndices[tapped], gaugeValues[tapped], true);
+        }
+    }
+
+    // Poll one gauge per cycle (round-robin, ~2.5 Hz per gauge)
+    uint32_t now = millis();
+    if (now - lastPollTime >= POLL_INTERVAL_MS) {
+        lastPollTime = now;
+
+        const GaugeConfig& g = GAUGES[gaugeIndices[pollSlot]];
+        uint8_t a = 0, b = 0;
+
+        if (obd2.requestPID(g.mode, g.pid, &a, &b, 50)) {
+            gaugeValues[pollSlot] = decodeOBD2(g, a, b);
+            lastCanDataTime = now;
+
+            if (sleeping) {
+                sleeping = false;
+                display.setBrightness(70);
+                needsFullRedraw = true;
+                Serial.println("[SLEEP] Waking up (CAN data)");
+            }
+        }
+
+        if (!sleeping) {
+            if (needsFullRedraw) {
+                display.drawAllGauges(gaugeIndices, gaugeValues, true);
+                needsFullRedraw = false;
+            } else {
+                display.drawSingleGauge(pollSlot, gaugeIndices[pollSlot],
+                                        gaugeValues[pollSlot], false);
+            }
+
+            // Sleep if no CAN data for too long
+            if (now - lastCanDataTime > SLEEP_TIMEOUT_MS && lastCanDataTime > 0) {
+                sleeping = true;
+                display.setBrightness(0);
+                Serial.println("[SLEEP] No CAN data - going to sleep");
+            }
+        }
+
+        pollSlot = (pollSlot + 1) % 4;
+    }
+}
+
+
+// #############################################################################
+//  CROWPANEL — Single gauge with rotary encoder + DTC diagnostics
+// #############################################################################
+
+#else // CrowPanel
+
+#include "encoder.h"
+
+RotaryEncoder encoder;
+
+int   currentGauge = 0;
+float currentValue = 0.0f;
+bool  needsFullRedraw = true;
+
 // Menu state machine
-// =============================================================================
 enum AppState {
-    STATE_GAUGE,        // Normal gauge display
-    STATE_DTC_MENU,     // DTC menu shown
-    STATE_DTC_SCAN,     // Scanning in progress
-    STATE_DTC_RESULTS,  // Showing scan results
-    STATE_DTC_CLEAR,    // Clearing in progress
-    STATE_DTC_CLEARED,  // Showing clear result
+    STATE_GAUGE,
+    STATE_DTC_MENU,
+    STATE_DTC_SCAN,
+    STATE_DTC_RESULTS,
+    STATE_DTC_CLEAR,
+    STATE_DTC_CLEARED,
 };
 
 AppState appState = STATE_GAUGE;
@@ -55,19 +160,15 @@ void setup() {
     Serial.println("\n=== ESP32 OBD2 Gauge ===");
     Serial.println("CrowPanel 1.28\" + M5Stack Mini CAN");
 
-    // Power indicator LED
     pinMode(PIN_PWR_LIGHT, OUTPUT);
     digitalWrite(PIN_PWR_LIGHT, HIGH);
 
-    // Initialize display
     Serial.println("[INIT] Display...");
     display.begin();
 
-    // Initialize rotary encoder
     Serial.println("[INIT] Encoder...");
     encoder.begin(PIN_ENC_A, PIN_ENC_B, PIN_ENC_SW);
 
-    // Initialize CAN bus
     Serial.println("[INIT] CAN bus...");
     if (obd2.begin(PIN_CAN_TX, PIN_CAN_RX)) {
         Serial.println("[INIT] CAN bus OK");
@@ -75,7 +176,6 @@ void setup() {
         Serial.println("[INIT] CAN bus FAILED - check wiring");
     }
 
-    // Draw initial gauge
     Serial.printf("[INIT] Starting with gauge: %s\n", GAUGES[currentGauge].name);
     currentValue = GAUGES[currentGauge].minVal;
     display.drawGauge(GAUGES[currentGauge], currentValue, true);
@@ -87,25 +187,20 @@ void loop() {
     int dir = encoder.getDirection();
     bool pressed = encoder.wasPressed();
 
-    // --- Wake from sleep on any input or CAN data ---
+    // Wake from sleep on any input
     if (sleeping && (dir != 0 || pressed)) {
         sleeping = false;
         display.setBrightness(70);
         needsFullRedraw = true;
         lastCanDataTime = millis();
         Serial.println("[SLEEP] Waking up (user input)");
-        // Consume the input so it doesn't also trigger menu/gauge switch
         dir = 0;
         pressed = false;
     }
 
     switch (appState) {
 
-    // =========================================================================
-    // Normal gauge view
-    // =========================================================================
     case STATE_GAUGE: {
-        // Encoder rotation → switch gauge
         if (dir != 0) {
             currentGauge += dir;
             if (currentGauge >= NUM_GAUGES) currentGauge = 0;
@@ -117,7 +212,6 @@ void loop() {
             needsFullRedraw = true;
         }
 
-        // Button press → open DTC menu
         if (pressed) {
             Serial.println("[MENU] Opening diagnostics menu");
             appState = STATE_DTC_MENU;
@@ -126,7 +220,6 @@ void loop() {
             break;
         }
 
-        // Poll OBD2
         uint32_t now = millis();
         if (now - lastPollTime >= POLL_INTERVAL_MS) {
             lastPollTime = now;
@@ -138,7 +231,6 @@ void loop() {
                 currentValue = decodeOBD2(gauge, dataA, dataB);
                 lastCanDataTime = now;
 
-                // Wake up if we were sleeping
                 if (sleeping) {
                     sleeping = false;
                     display.setBrightness(70);
@@ -155,7 +247,6 @@ void loop() {
                     display.drawNoCanStatus();
                 }
 
-                // Sleep if no CAN data for too long
                 if (now - lastCanDataTime > SLEEP_TIMEOUT_MS && lastCanDataTime > 0) {
                     sleeping = true;
                     display.setBrightness(0);
@@ -166,9 +257,6 @@ void loop() {
         break;
     }
 
-    // =========================================================================
-    // DTC menu — rotate to select, press to confirm
-    // =========================================================================
     case STATE_DTC_MENU: {
         if (dir != 0) {
             menuSelection += dir;
@@ -179,17 +267,14 @@ void loop() {
 
         if (pressed) {
             if (menuSelection == 0) {
-                // Scan codes
                 Serial.println("[DTC] Scanning for trouble codes...");
                 display.drawDTCScanning();
                 appState = STATE_DTC_SCAN;
             } else if (menuSelection == 1) {
-                // Clear codes
                 Serial.println("[DTC] Clearing trouble codes...");
                 display.drawDTCClearing();
                 appState = STATE_DTC_CLEAR;
             } else {
-                // Back
                 Serial.println("[MENU] Returning to gauge");
                 appState = STATE_GAUGE;
                 needsFullRedraw = true;
@@ -198,9 +283,6 @@ void loop() {
         break;
     }
 
-    // =========================================================================
-    // Scanning — runs once, then shows results
-    // =========================================================================
     case STATE_DTC_SCAN: {
         dtcCount = obd2.scanDTCs(dtcList, MAX_DTCS);
         if (dtcCount < 0) dtcCount = 0;
@@ -216,11 +298,7 @@ void loop() {
         break;
     }
 
-    // =========================================================================
-    // Showing results — press to go back to menu
-    // =========================================================================
     case STATE_DTC_RESULTS: {
-        // Scroll through codes with the knob
         if (dir != 0 && dtcCount > 5) {
             dtcScrollOffset += dir;
             if (dtcScrollOffset < 0) dtcScrollOffset = 0;
@@ -236,9 +314,6 @@ void loop() {
         break;
     }
 
-    // =========================================================================
-    // Clearing — runs once, then shows result
-    // =========================================================================
     case STATE_DTC_CLEAR: {
         bool ok = obd2.clearDTCs();
         Serial.printf("[DTC] Clear %s\n", ok ? "OK" : "FAILED");
@@ -247,9 +322,6 @@ void loop() {
         break;
     }
 
-    // =========================================================================
-    // Showing clear result — press to go back to menu
-    // =========================================================================
     case STATE_DTC_CLEARED: {
         if (pressed) {
             appState = STATE_DTC_MENU;
@@ -261,3 +333,5 @@ void loop() {
 
     } // end switch
 }
+
+#endif // CrowPanel
