@@ -17,7 +17,9 @@ static constexpr uint16_t C_ORANGE  = 0xFB20;
 #ifdef TARGET_TAB5
 
 void GaugeDisplay::begin() {
-    // M5Unified handles display init — just set up our sprites
+    // Force landscape: Tab5 panel is 720x1280 natively, rotation 1 = 1280x720
+    M5.Display.setRotation(1);
+
     _layout = GaugeLayout::fromSize(GAUGE_SIZE);
 
     for (int i = 0; i < 4; i++) {
