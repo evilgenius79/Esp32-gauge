@@ -8,7 +8,6 @@
 // or GPIO_EXT header. Adjust pins below to match your wiring.
 // =============================================================================
 
-// ---- CAN Bus (via Port A Grove or GPIO_EXT) ----
-// Port A default — verify against your Tab5 revision & wiring
-#define PIN_CAN_TX      19
-#define PIN_CAN_RX      20
+// ---- CAN Bus (via Port A Grove HY2.0-4P) ----
+#define PIN_CAN_TX      53
+#define PIN_CAN_RX      54
