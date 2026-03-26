@@ -85,6 +85,7 @@ public:
     void drawAllGauges(const int indices[4], const float values[4], bool forceRedraw);
     void drawSingleGauge(int slot, int gaugeIdx, float value, bool forceRedraw);
     void drawDTCButton();  // Draw DTC button at center of grid
+    void invalidateSlot(int slot);  // Force full redraw of slot (after config edit)
 
     // Touch input — call once per loop, returns action
     enum TouchAction {
@@ -96,15 +97,22 @@ public:
     TouchAction pollTouch();  // Call once per loop iteration
     int touchSlot = -1;       // Which slot was touched (0-3)
 
-    // DTC screens (fullscreen overlay)
-    void drawDTCMenuTab5(int selectedItem);
-    int  dtcMenuTapped();  // Returns tapped menu item 0-2, or -1
+    // DTC & tools menu (fullscreen overlay)
+    void drawDTCMenuTab5(int selectedItem, bool logging = false, bool peakHold = false);
+    int  dtcMenuTapped();  // Returns tapped menu item 0-5, or -1
     void drawDTCScanningTab5();
     void drawDTCResultsTab5(const DTC* dtcs, int count, int scrollOffset = 0);
     int  dtcResultsScrollOrBack(); // Returns: -2=back, -1=scroll up, 1=scroll down, 0=none
     void drawDTCClearingTab5();
     void drawDTCClearedTab5(bool success);
     bool dtcBackTapped();  // Generic "tap anywhere to go back"
+
+    // PID discovery
+    void drawPIDScanningTab5();
+    void drawPIDResultsTab5(const uint8_t* pidBitmap, int count);
+
+    // Fullscreen single gauge (double-tap to enter, any tap to exit)
+    void drawFullscreenGauge(int gaugeIdx, float value, float peakVal, bool forceRedraw);
 
     // Gauge editor
     void drawGaugeEditor(int slot, const GaugeConfig& gauge, int selectedField);
@@ -134,8 +142,12 @@ private:
 
 #ifdef TARGET_TAB5
     LGFX_Sprite _sprites[4];
+    LGFX_Sprite _fullSprite;    // Fullscreen gauge sprite (created on demand)
+    GaugeLayout _fullLayout;    // Layout for fullscreen gauge
     float _prevValues[4]  = {-99999, -99999, -99999, -99999};
     int   _prevGaugeIdx[4] = {-1, -1, -1, -1};
+    float _prevFullValue = -99999;
+    int   _prevFullIdx = -1;
     uint32_t _lastTouchTime = 0;
 
     // Long-press tracking
