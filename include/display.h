@@ -155,6 +155,8 @@ private:
     int      _touchQuadrant = -1;
     uint32_t _touchStartTime = 0;
     bool     _longPressTriggered = false;
+    int      _touchX = 0;
+    int      _touchY = 0;
     static constexpr uint32_t LONG_PRESS_MS = 1000;
 
     // 2x2 grid layout: each cell 640x360, gauge 320x320 centered

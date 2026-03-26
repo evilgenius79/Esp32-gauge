@@ -90,27 +90,36 @@ void GaugeDisplay::drawAllGauges(const int indices[4], const float values[4], bo
 // =============================================================================
 
 GaugeDisplay::TouchAction GaugeDisplay::pollTouch() {
-    auto touch = M5.Touch.getDetail();
     uint32_t now = millis();
     touchSlot = -1;
 
-    // Track touch-down for long-press detection
-    if (touch.isPressed()) {
+    // Use getCount() to detect touches — more reliable across M5 devices
+    int touchCount = M5.Touch.getCount();
+
+    if (touchCount > 0) {
+        auto tp = M5.Touch.getDetail(0);
+        int tx = tp.x;
+        int ty = tp.y;
+
         if (!_touching) {
             // Touch just started
             _touching = true;
             _touchStartTime = now;
             _longPressTriggered = false;
+            _touchX = tx;
+            _touchY = ty;
 
-            int col = (touch.x < SCREEN_W / 2) ? 0 : 1;
-            int row = (touch.y < SCREEN_H / 2) ? 0 : 1;
+            int col = (tx < SCREEN_W / 2) ? 0 : 1;
+            int row = (ty < SCREEN_H / 2) ? 0 : 1;
             _touchQuadrant = row * 2 + col;
 
             // Check if touching DTC button area
-            if (touch.x >= DTC_BTN_X && touch.x <= DTC_BTN_X + DTC_BTN_W &&
-                touch.y >= DTC_BTN_Y && touch.y <= DTC_BTN_Y + DTC_BTN_H) {
+            if (tx >= DTC_BTN_X && tx <= DTC_BTN_X + DTC_BTN_W &&
+                ty >= DTC_BTN_Y && ty <= DTC_BTN_Y + DTC_BTN_H) {
                 _touchQuadrant = -1;  // Not a gauge quadrant
             }
+
+            Serial.printf("[TOUCH] DOWN x=%d y=%d quad=%d\n", tx, ty, _touchQuadrant);
         }
 
         // Check for long-press (1 second hold on a gauge)
@@ -119,15 +128,18 @@ GaugeDisplay::TouchAction GaugeDisplay::pollTouch() {
             _longPressTriggered = true;
             touchSlot = _touchQuadrant;
             _lastTouchTime = now;
+            Serial.printf("[TOUCH] LONG-PRESS slot=%d\n", touchSlot);
             return TOUCH_GAUGE_LONGPRESS;
         }
         return TOUCH_NONE;
     }
 
-    // Touch released
+    // No touch — check if we were touching (= release)
     if (_touching) {
         _touching = false;
         uint32_t duration = now - _touchStartTime;
+
+        Serial.printf("[TOUCH] UP duration=%lums\n", duration);
 
         // Debounce
         if (now - _lastTouchTime < 300) return TOUCH_NONE;
@@ -139,10 +151,11 @@ GaugeDisplay::TouchAction GaugeDisplay::pollTouch() {
         // Short tap (< 1 second)
         if (duration < LONG_PRESS_MS) {
             if (_touchQuadrant == -1) {
-                // DTC button tap
+                Serial.println("[TOUCH] DTC BUTTON");
                 return TOUCH_DTC_BUTTON;
             } else {
                 touchSlot = _touchQuadrant;
+                Serial.printf("[TOUCH] TAP slot=%d\n", touchSlot);
                 return TOUCH_GAUGE_TAP;
             }
         }
@@ -234,15 +247,23 @@ void GaugeDisplay::drawDTCMenuTab5(int selectedItem, bool obdEnabled, bool loggi
 }
 
 int GaugeDisplay::dtcMenuTapped() {
-    auto touch = M5.Touch.getDetail();
-    if (!touch.wasClicked()) return -1;
+    // Detect tap: screen was touched and now released
+    int count = M5.Touch.getCount();
+    if (count > 0) {
+        auto tp = M5.Touch.getDetail(0);
+        _touchX = tp.x;  _touchY = tp.y;
+        _touching = true;
+        return -1;
+    }
+    if (!_touching) return -1;
+    _touching = false;
 
     uint32_t now = millis();
     if (now - _lastTouchTime < 300) return -1;
     _lastTouchTime = now;
 
-    int tx = touch.x;
-    int ty = touch.y;
+    int tx = _touchX;
+    int ty = _touchY;
     int btnX = TCX - TAB5_MENU_BTN_W / 2;
 
     for (int i = 0; i < TAB5_MENU_COUNT; i++) {
@@ -317,14 +338,21 @@ void GaugeDisplay::drawDTCResultsTab5(const DTC* dtcs, int count, int scrollOffs
 }
 
 int GaugeDisplay::dtcResultsScrollOrBack() {
-    auto touch = M5.Touch.getDetail();
-    if (!touch.wasClicked()) return 0;
+    int count = M5.Touch.getCount();
+    if (count > 0) {
+        auto tp = M5.Touch.getDetail(0);
+        _touchY = tp.y;
+        _touching = true;
+        return 0;
+    }
+    if (!_touching) return 0;
+    _touching = false;
 
     uint32_t now = millis();
     if (now - _lastTouchTime < 300) return 0;
     _lastTouchTime = now;
 
-    int ty = touch.y;
+    int ty = _touchY;
     // Top quarter = scroll up, bottom quarter = scroll down, middle = back
     if (ty < 180) return -1;       // scroll up
     if (ty > 540) return 1;        // scroll down
@@ -368,8 +396,13 @@ void GaugeDisplay::drawDTCClearedTab5(bool success) {
 }
 
 bool GaugeDisplay::dtcBackTapped() {
-    auto touch = M5.Touch.getDetail();
-    if (!touch.wasClicked()) return false;
+    int count = M5.Touch.getCount();
+    if (count > 0) {
+        _touching = true;
+        return false;
+    }
+    if (!_touching) return false;
+    _touching = false;
 
     uint32_t now = millis();
     if (now - _lastTouchTime < 300) return false;
@@ -493,15 +526,22 @@ void GaugeDisplay::drawGaugeEditor(int slot, const GaugeConfig& gauge, int selec
 }
 
 int GaugeDisplay::editorFieldTapped() {
-    auto touch = M5.Touch.getDetail();
-    if (!touch.wasClicked()) return -1;
+    int count = M5.Touch.getCount();
+    if (count > 0) {
+        auto tp = M5.Touch.getDetail(0);
+        _touchX = tp.x;  _touchY = tp.y;
+        _touching = true;
+        return -1;
+    }
+    if (!_touching) return -1;
+    _touching = false;
 
     uint32_t now = millis();
     if (now - _lastTouchTime < 300) return -1;
     _lastTouchTime = now;
 
-    int tx = touch.x;
-    int ty = touch.y;
+    int tx = _touchX;
+    int ty = _touchY;
 
     // Check field rows
     for (int i = 0; i < NUM_FIELDS; i++) {
@@ -572,8 +612,15 @@ void GaugeDisplay::drawFormulaPicker(int currentFormula) {
 }
 
 int GaugeDisplay::formulaPickerTapped() {
-    auto touch = M5.Touch.getDetail();
-    if (!touch.wasClicked()) return -1;
+    int count = M5.Touch.getCount();
+    if (count > 0) {
+        auto tp = M5.Touch.getDetail(0);
+        _touchX = tp.x;  _touchY = tp.y;
+        _touching = true;
+        return -1;
+    }
+    if (!_touching) return -1;
+    _touching = false;
 
     uint32_t now = millis();
     if (now - _lastTouchTime < 300) return -1;
@@ -587,8 +634,8 @@ int GaugeDisplay::formulaPickerTapped() {
 
     for (int i = 0; i < NUM_DECODE_FORMULAS; i++) {
         int y = fStartY + i * (fBtnH + fGap);
-        if (touch.x >= fX && touch.x <= fX + fBtnW &&
-            touch.y >= y && touch.y <= y + fBtnH) {
+        if (_touchX >= fX && _touchX <= fX + fBtnW &&
+            _touchY >= y && _touchY <= y + fBtnH) {
             return i;
         }
     }
@@ -799,15 +846,22 @@ void GaugeDisplay::drawEditorKeypad(const char* fieldTitle, const char* currentV
 }
 
 int GaugeDisplay::keypadTapped(char* buffer, int bufLen) {
-    auto touch = M5.Touch.getDetail();
-    if (!touch.wasClicked()) return -1;
+    int count = M5.Touch.getCount();
+    if (count > 0) {
+        auto tp = M5.Touch.getDetail(0);
+        _touchX = tp.x;  _touchY = tp.y;
+        _touching = true;
+        return -1;
+    }
+    if (!_touching) return -1;
+    _touching = false;
 
     uint32_t now = millis();
     if (now - _lastTouchTime < 200) return -1;
     _lastTouchTime = now;
 
-    int tx = touch.x;
-    int ty = touch.y;
+    int tx = _touchX;
+    int ty = _touchY;
 
     int totalW = KP_KEYS_PER_ROW * KP_KEY_W + (KP_KEYS_PER_ROW - 1) * KP_GAP;
     int kpStartX = TCX - totalW / 2;
