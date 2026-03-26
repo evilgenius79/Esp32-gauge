@@ -42,6 +42,10 @@ void GaugeDisplay::setBrightness(uint8_t percent) {
     M5.Display.setBrightness((percent * 255) / 100);
 }
 
+void GaugeDisplay::clearScreen() {
+    M5.Display.fillScreen(C_BLACK);
+}
+
 void GaugeDisplay::drawSingleGauge(int slot, int gaugeIdx, float value, bool forceRedraw) {
     if (slot < 0 || slot > 3) return;
     const GaugeConfig& gauge = GAUGES[gaugeIdx];
@@ -316,6 +320,10 @@ bool GaugeDisplay::dtcBackTapped() {
 
 static constexpr int CX = 120;
 static constexpr int CY = 120;
+
+void GaugeDisplay::clearScreen() {
+    _tft.fillScreen(C_BLACK);
+}
 
 void GaugeDisplay::begin() {
     pinMode(PIN_LCD_PWR_EN1, OUTPUT);

@@ -95,6 +95,7 @@ void loop() {
             } else {
                 Serial.println("[DTC] Opening diagnostics menu");
                 tab5State = T5_DTC_MENU;
+                display.clearScreen();
                 display.drawDTCMenuTab5(-1);
                 break;
             }
@@ -140,6 +141,7 @@ void loop() {
 
             if (!sleeping) {
                 if (needsFullRedraw) {
+                    display.clearScreen();
                     display.drawAllGauges(gaugeIndices, gaugeValues, true);
                     display.drawDTCButton();
                     needsFullRedraw = false;
@@ -199,6 +201,7 @@ void loop() {
         if (action == -2) {
             // Back to menu
             tab5State = T5_DTC_MENU;
+            display.clearScreen();
             display.drawDTCMenuTab5(-1);
         } else if (action == -1 && dtcScrollOffset > 0) {
             dtcScrollOffset--;
@@ -221,6 +224,7 @@ void loop() {
     case T5_DTC_CLEARED: {
         if (display.dtcBackTapped()) {
             tab5State = T5_DTC_MENU;
+            display.clearScreen();
             display.drawDTCMenuTab5(-1);
         }
         break;

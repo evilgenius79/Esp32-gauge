@@ -78,6 +78,7 @@ class GaugeDisplay {
 public:
     void begin();
     void setBrightness(uint8_t percent);
+    void clearScreen();  // Full black fill — call on state transitions
 
 #ifdef TARGET_TAB5
     // --- Tab5: 4-gauge dashboard ---
