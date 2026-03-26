@@ -46,13 +46,6 @@ void GaugeDisplay::clearScreen() {
     M5.Display.fillScreen(C_BLACK);
 }
 
-void GaugeDisplay::invalidateSlot(int slot) {
-    if (slot >= 0 && slot < 4) {
-        _prevGaugeIdx[slot] = -1;
-        _prevValues[slot] = -99999;
-    }
-}
-
 void GaugeDisplay::drawSingleGauge(int slot, int gaugeIdx, float value, bool forceRedraw) {
     if (slot < 0 || slot > 3) return;
     const GaugeConfig& gauge = GAUGES[gaugeIdx];
@@ -90,36 +83,27 @@ void GaugeDisplay::drawAllGauges(const int indices[4], const float values[4], bo
 // =============================================================================
 
 GaugeDisplay::TouchAction GaugeDisplay::pollTouch() {
+    auto touch = M5.Touch.getDetail();
     uint32_t now = millis();
     touchSlot = -1;
 
-    // Use getDetail(0).isPressed() — works across all M5 devices including Tab5
-    auto tp = M5.Touch.getDetail(0);
-    bool pressed = tp.isPressed();
-
-    if (pressed) {
-        int tx = tp.x;
-        int ty = tp.y;
-
+    // Track touch-down for long-press detection
+    if (touch.isPressed()) {
         if (!_touching) {
             // Touch just started
             _touching = true;
             _touchStartTime = now;
             _longPressTriggered = false;
-            _touchX = tx;
-            _touchY = ty;
 
-            int col = (tx < SCREEN_W / 2) ? 0 : 1;
-            int row = (ty < SCREEN_H / 2) ? 0 : 1;
+            int col = (touch.x < SCREEN_W / 2) ? 0 : 1;
+            int row = (touch.y < SCREEN_H / 2) ? 0 : 1;
             _touchQuadrant = row * 2 + col;
 
             // Check if touching DTC button area
-            if (tx >= DTC_BTN_X && tx <= DTC_BTN_X + DTC_BTN_W &&
-                ty >= DTC_BTN_Y && ty <= DTC_BTN_Y + DTC_BTN_H) {
+            if (touch.x >= DTC_BTN_X && touch.x <= DTC_BTN_X + DTC_BTN_W &&
+                touch.y >= DTC_BTN_Y && touch.y <= DTC_BTN_Y + DTC_BTN_H) {
                 _touchQuadrant = -1;  // Not a gauge quadrant
             }
-
-            Serial.printf("[TOUCH] DOWN x=%d y=%d quad=%d\n", tx, ty, _touchQuadrant);
         }
 
         // Check for long-press (1 second hold on a gauge)
@@ -128,18 +112,15 @@ GaugeDisplay::TouchAction GaugeDisplay::pollTouch() {
             _longPressTriggered = true;
             touchSlot = _touchQuadrant;
             _lastTouchTime = now;
-            Serial.printf("[TOUCH] LONG-PRESS slot=%d\n", touchSlot);
             return TOUCH_GAUGE_LONGPRESS;
         }
         return TOUCH_NONE;
     }
 
-    // No touch — check if we were touching (= release)
+    // Touch released
     if (_touching) {
         _touching = false;
         uint32_t duration = now - _touchStartTime;
-
-        Serial.printf("[TOUCH] UP duration=%lums\n", duration);
 
         // Debounce
         if (now - _lastTouchTime < 300) return TOUCH_NONE;
@@ -151,11 +132,10 @@ GaugeDisplay::TouchAction GaugeDisplay::pollTouch() {
         // Short tap (< 1 second)
         if (duration < LONG_PRESS_MS) {
             if (_touchQuadrant == -1) {
-                Serial.println("[TOUCH] DTC BUTTON");
+                // DTC button tap
                 return TOUCH_DTC_BUTTON;
             } else {
                 touchSlot = _touchQuadrant;
-                Serial.printf("[TOUCH] TAP slot=%d\n", touchSlot);
                 return TOUCH_GAUGE_TAP;
             }
         }
@@ -184,88 +164,52 @@ void GaugeDisplay::drawDTCButton() {
 static constexpr int TCX = 640;  // Tab5 center X
 static constexpr int TCY = 360;  // Tab5 center Y
 
-static constexpr int TAB5_MENU_COUNT = 7;
+static const char* TAB5_DTC_MENU[] = { "SCAN CODES", "CLEAR CODES", "BACK" };
 static constexpr int TAB5_MENU_BTN_W = 400;
-static constexpr int TAB5_MENU_BTN_H = 52;
-static constexpr int TAB5_MENU_SPACING = 62;
-static constexpr int TAB5_MENU_START_Y = 110;
+static constexpr int TAB5_MENU_BTN_H = 70;
+static constexpr int TAB5_MENU_SPACING = 90;
+static constexpr int TAB5_MENU_START_Y = 220;
 
-void GaugeDisplay::drawDTCMenuTab5(int selectedItem, bool obdEnabled, bool logging, bool peakHold) {
+void GaugeDisplay::drawDTCMenuTab5(int selectedItem) {
     M5.Display.fillScreen(C_BLACK);
 
     M5.Display.setFont(&fonts::FreeSansBold18pt7b);
     M5.Display.setTextDatum(TC_DATUM);
     M5.Display.setTextColor(C_ORANGE);
-    M5.Display.drawString("TOOLS & DIAGNOSTICS", TCX, 30);
+    M5.Display.drawString("DIAGNOSTICS", TCX, 60);
 
-    M5.Display.drawFastHLine(TCX - 250, 80, 500, C_DKGRAY);
-
-    const char* labels[TAB5_MENU_COUNT] = {
-        obdEnabled ? "OBD: CONNECTED" : "OBD: CONNECT",
-        "SCAN CODES", "CLEAR CODES",
-        logging ? "STOP LOGGING" : "LOG TO SD",
-        peakHold ? "PEAK HOLD: ON" : "PEAK HOLD: OFF",
-        "SCAN SUPPORTED PIDS",
-        "BACK"
-    };
+    M5.Display.drawFastHLine(TCX - 200, 120, 400, C_DKGRAY);
 
     M5.Display.setFont(&fonts::FreeSansBold12pt7b);
-    for (int i = 0; i < TAB5_MENU_COUNT; i++) {
+    for (int i = 0; i < 3; i++) {
         int y = TAB5_MENU_START_Y + i * TAB5_MENU_SPACING;
         int x = TCX - TAB5_MENU_BTN_W / 2;
 
-        uint16_t bgColor = C_BLACK;
-        uint16_t borderColor = C_GRAY;
-        uint16_t textColor = C_GRAY;
-
         if (i == selectedItem) {
-            bgColor = C_RED;
-            textColor = C_WHITE;
-            borderColor = C_RED;
-        } else if (i == 0 && obdEnabled) {
-            // OBD connected: green indicator
-            borderColor = 0x07E0;
-            textColor = 0x07E0;
-        } else if (i == 3 && logging) {
-            // Active logging: green indicator
-            borderColor = 0x07E0;
-            textColor = 0x07E0;
-        } else if (i == 4 && peakHold) {
-            // Peak hold active: yellow indicator
-            borderColor = 0xFFE0;
-            textColor = 0xFFE0;
+            M5.Display.fillRoundRect(x, y, TAB5_MENU_BTN_W, TAB5_MENU_BTN_H, 12, C_RED);
+            M5.Display.setTextColor(C_WHITE);
+        } else {
+            M5.Display.drawRoundRect(x, y, TAB5_MENU_BTN_W, TAB5_MENU_BTN_H, 12, C_GRAY);
+            M5.Display.setTextColor(C_GRAY);
         }
-
-        if (bgColor != C_BLACK) {
-            M5.Display.fillRoundRect(x, y, TAB5_MENU_BTN_W, TAB5_MENU_BTN_H, 12, bgColor);
-        }
-        M5.Display.drawRoundRect(x, y, TAB5_MENU_BTN_W, TAB5_MENU_BTN_H, 12, borderColor);
         M5.Display.setTextDatum(MC_DATUM);
-        M5.Display.setTextColor(textColor);
-        M5.Display.drawString(labels[i], TCX, y + TAB5_MENU_BTN_H / 2);
+        M5.Display.drawString(TAB5_DTC_MENU[i], TCX, y + TAB5_MENU_BTN_H / 2);
     }
 }
 
 int GaugeDisplay::dtcMenuTapped() {
-    // Detect tap: screen was touched and now released
-    auto tp = M5.Touch.getDetail(0);
-    if (tp.isPressed()) {
-        _touchX = tp.x;  _touchY = tp.y;
-        _touching = true;
-        return -1;
-    }
-    if (!_touching) return -1;
-    _touching = false;
+    auto touch = M5.Touch.getDetail();
+    if (!touch.wasClicked()) return -1;
 
     uint32_t now = millis();
     if (now - _lastTouchTime < 300) return -1;
     _lastTouchTime = now;
 
-    int tx = _touchX;
-    int ty = _touchY;
+    int tx = touch.x;
+    int ty = touch.y;
     int btnX = TCX - TAB5_MENU_BTN_W / 2;
 
-    for (int i = 0; i < TAB5_MENU_COUNT; i++) {
+    for (int i = 0; i < 3; i++) {
         int btnY = TAB5_MENU_START_Y + i * TAB5_MENU_SPACING;
         if (tx >= btnX && tx <= btnX + TAB5_MENU_BTN_W &&
             ty >= btnY && ty <= btnY + TAB5_MENU_BTN_H) {
@@ -337,20 +281,14 @@ void GaugeDisplay::drawDTCResultsTab5(const DTC* dtcs, int count, int scrollOffs
 }
 
 int GaugeDisplay::dtcResultsScrollOrBack() {
-    auto tp = M5.Touch.getDetail(0);
-    if (tp.isPressed()) {
-        _touchY = tp.y;
-        _touching = true;
-        return 0;
-    }
-    if (!_touching) return 0;
-    _touching = false;
+    auto touch = M5.Touch.getDetail();
+    if (!touch.wasClicked()) return 0;
 
     uint32_t now = millis();
     if (now - _lastTouchTime < 300) return 0;
     _lastTouchTime = now;
 
-    int ty = _touchY;
+    int ty = touch.y;
     // Top quarter = scroll up, bottom quarter = scroll down, middle = back
     if (ty < 180) return -1;       // scroll up
     if (ty > 540) return 1;        // scroll down
@@ -394,13 +332,8 @@ void GaugeDisplay::drawDTCClearedTab5(bool success) {
 }
 
 bool GaugeDisplay::dtcBackTapped() {
-    auto tp = M5.Touch.getDetail(0);
-    if (tp.isPressed()) {
-        _touching = true;
-        return false;
-    }
-    if (!_touching) return false;
-    _touching = false;
+    auto touch = M5.Touch.getDetail();
+    if (!touch.wasClicked()) return false;
 
     uint32_t now = millis();
     if (now - _lastTouchTime < 300) return false;
@@ -524,21 +457,15 @@ void GaugeDisplay::drawGaugeEditor(int slot, const GaugeConfig& gauge, int selec
 }
 
 int GaugeDisplay::editorFieldTapped() {
-    auto tp = M5.Touch.getDetail(0);
-    if (tp.isPressed()) {
-        _touchX = tp.x;  _touchY = tp.y;
-        _touching = true;
-        return -1;
-    }
-    if (!_touching) return -1;
-    _touching = false;
+    auto touch = M5.Touch.getDetail();
+    if (!touch.wasClicked()) return -1;
 
     uint32_t now = millis();
     if (now - _lastTouchTime < 300) return -1;
     _lastTouchTime = now;
 
-    int tx = _touchX;
-    int ty = _touchY;
+    int tx = touch.x;
+    int ty = touch.y;
 
     // Check field rows
     for (int i = 0; i < NUM_FIELDS; i++) {
@@ -609,14 +536,8 @@ void GaugeDisplay::drawFormulaPicker(int currentFormula) {
 }
 
 int GaugeDisplay::formulaPickerTapped() {
-    auto tp = M5.Touch.getDetail(0);
-    if (tp.isPressed()) {
-        _touchX = tp.x;  _touchY = tp.y;
-        _touching = true;
-        return -1;
-    }
-    if (!_touching) return -1;
-    _touching = false;
+    auto touch = M5.Touch.getDetail();
+    if (!touch.wasClicked()) return -1;
 
     uint32_t now = millis();
     if (now - _lastTouchTime < 300) return -1;
@@ -630,124 +551,12 @@ int GaugeDisplay::formulaPickerTapped() {
 
     for (int i = 0; i < NUM_DECODE_FORMULAS; i++) {
         int y = fStartY + i * (fBtnH + fGap);
-        if (_touchX >= fX && _touchX <= fX + fBtnW &&
-            _touchY >= y && _touchY <= y + fBtnH) {
+        if (touch.x >= fX && touch.x <= fX + fBtnW &&
+            touch.y >= y && touch.y <= y + fBtnH) {
             return i;
         }
     }
     return -1;
-}
-
-// =============================================================================
-// PID Discovery screens
-// =============================================================================
-
-void GaugeDisplay::drawPIDScanningTab5() {
-    M5.Display.fillScreen(C_BLACK);
-    M5.Display.setFont(&fonts::FreeSansBold18pt7b);
-    M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.setTextColor(C_ORANGE);
-    M5.Display.drawString("SCANNING PIDs...", TCX, TCY);
-    M5.Display.setFont(&fonts::Font2);
-    M5.Display.setTextColor(C_GRAY);
-    M5.Display.drawString("Querying Mode 01 PID support", TCX, TCY + 50);
-}
-
-void GaugeDisplay::drawPIDResultsTab5(const uint8_t* pidBitmap, int count) {
-    M5.Display.fillScreen(C_BLACK);
-
-    M5.Display.setFont(&fonts::FreeSansBold12pt7b);
-    M5.Display.setTextDatum(TC_DATUM);
-    M5.Display.setTextColor(C_ORANGE);
-    char title[32];
-    snprintf(title, sizeof(title), "SUPPORTED PIDs: %d", count);
-    M5.Display.drawString(title, TCX, 20);
-    M5.Display.drawFastHLine(TCX - 250, 55, 500, C_DKGRAY);
-
-    // Display PIDs in columns
-    M5.Display.setFont(&fonts::Font2);
-    int col = 0, row = 0;
-    int startX = 100, startY = 70;
-    int colW = 200, rowH = 24;
-
-    for (int pid = 1; pid < 256; pid++) {
-        if (pidBitmap[pid / 8] & (1 << (pid % 8))) {
-            int x = startX + col * colW;
-            int y = startY + row * rowH;
-
-            if (y + rowH > 690) break;  // Don't overflow screen
-
-            char pidStr[16];
-            snprintf(pidStr, sizeof(pidStr), "PID 0x%02X", pid);
-
-            M5.Display.setTextDatum(ML_DATUM);
-            M5.Display.setTextColor(0x07E0);
-            M5.Display.drawString(pidStr, x, y);
-
-            row++;
-            if (row > 24) { row = 0; col++; }
-            if (col > 5) break;
-        }
-    }
-
-    M5.Display.setFont(&fonts::FreeSansBold9pt7b);
-    M5.Display.setTextDatum(BC_DATUM);
-    M5.Display.setTextColor(C_GRAY);
-    M5.Display.drawString("tap to return", TCX, 710);
-}
-
-// =============================================================================
-// Fullscreen single gauge — uses full 720px sprite
-// =============================================================================
-
-void GaugeDisplay::drawFullscreenGauge(int gaugeIdx, float value, float peakVal, bool forceRedraw) {
-    const GaugeConfig& gauge = GAUGES[gaugeIdx];
-    float clamped = constrain(value, gauge.minVal, gauge.maxVal);
-
-    // Skip redraw if nothing changed
-    if (!forceRedraw && _prevFullIdx == gaugeIdx &&
-        fabsf(clamped - _prevFullValue) < (gauge.maxVal - gauge.minVal) * 0.002f) {
-        return;
-    }
-
-    // Create fullscreen sprite on first use or gauge change
-    if (_prevFullIdx != gaugeIdx || forceRedraw) {
-        if (!_fullSprite.getBuffer()) {
-            _fullSprite.setColorDepth(16);
-            _fullSprite.setPsram(true);
-            _fullSprite.createSprite(SCREEN_H, SCREEN_H);  // 720x720 square
-            _fullLayout = GaugeLayout::fromSize(SCREEN_H);
-        }
-        _prevFullIdx = gaugeIdx;
-    }
-    _prevFullValue = clamped;
-
-    _fullSprite.fillSprite(0x0000);
-    renderGauge(_fullSprite, _fullLayout, gauge, clamped);
-
-    // Draw peak value indicator if enabled
-    if (peakVal >= gauge.minVal) {
-        float peakClamped = constrain(peakVal, gauge.minVal, gauge.maxVal);
-        _fullSprite.setFont(&fonts::FreeSansBold9pt7b);
-        _fullSprite.setTextDatum(TC_DATUM);
-        _fullSprite.setTextColor(0xFFE0);  // Yellow
-        char peakBuf[24];
-        snprintf(peakBuf, sizeof(peakBuf), "PEAK: %.1f", peakClamped);
-        _fullSprite.drawString(peakBuf, SCREEN_H / 2, 20);
-    }
-
-    // Center the 720x720 sprite on the 1280x720 screen
-    int xOffset = (SCREEN_W - SCREEN_H) / 2;  // (1280-720)/2 = 280
-    _fullSprite.pushSprite(&M5.Display, xOffset, 0);
-
-    // Draw "tap to exit" hint in the side margins
-    M5.Display.setFont(&fonts::Font2);
-    M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.setTextColor(C_GRAY);
-    if (forceRedraw) {
-        M5.Display.drawString("TAP TO EXIT", xOffset / 2, SCREEN_H / 2);
-        M5.Display.drawString("TAP TO EXIT", SCREEN_W - xOffset / 2, SCREEN_H / 2);
-    }
 }
 
 // =============================================================================
@@ -842,21 +651,15 @@ void GaugeDisplay::drawEditorKeypad(const char* fieldTitle, const char* currentV
 }
 
 int GaugeDisplay::keypadTapped(char* buffer, int bufLen) {
-    auto tp = M5.Touch.getDetail(0);
-    if (tp.isPressed()) {
-        _touchX = tp.x;  _touchY = tp.y;
-        _touching = true;
-        return -1;
-    }
-    if (!_touching) return -1;
-    _touching = false;
+    auto touch = M5.Touch.getDetail();
+    if (!touch.wasClicked()) return -1;
 
     uint32_t now = millis();
     if (now - _lastTouchTime < 200) return -1;
     _lastTouchTime = now;
 
-    int tx = _touchX;
-    int ty = _touchY;
+    int tx = touch.x;
+    int ty = touch.y;
 
     int totalW = KP_KEYS_PER_ROW * KP_KEY_W + (KP_KEYS_PER_ROW - 1) * KP_GAP;
     int kpStartX = TCX - totalW / 2;
