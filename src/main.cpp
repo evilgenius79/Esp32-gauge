@@ -166,6 +166,18 @@ static const char* FIELD_NAMES[] = {
 void loop() {
     M5.update();
 
+    // Raw touch diagnostic — prints once per second to serial monitor
+    {
+        static uint32_t lastDiag = 0;
+        uint32_t now = millis();
+        if (now - lastDiag >= 1000) {
+            lastDiag = now;
+            auto td = M5.Touch.getDetail(0);
+            Serial.printf("[DIAG] touch: pressed=%d x=%d y=%d state=%d\n",
+                          td.isPressed(), td.x, td.y, tab5State);
+        }
+    }
+
     switch (tab5State) {
 
     case T5_GAUGE: {

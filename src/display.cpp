@@ -93,11 +93,11 @@ GaugeDisplay::TouchAction GaugeDisplay::pollTouch() {
     uint32_t now = millis();
     touchSlot = -1;
 
-    // Use getCount() to detect touches — more reliable across M5 devices
-    int touchCount = M5.Touch.getCount();
+    // Use getDetail(0).isPressed() — works across all M5 devices including Tab5
+    auto tp = M5.Touch.getDetail(0);
+    bool pressed = tp.isPressed();
 
-    if (touchCount > 0) {
-        auto tp = M5.Touch.getDetail(0);
+    if (pressed) {
         int tx = tp.x;
         int ty = tp.y;
 
@@ -248,9 +248,8 @@ void GaugeDisplay::drawDTCMenuTab5(int selectedItem, bool obdEnabled, bool loggi
 
 int GaugeDisplay::dtcMenuTapped() {
     // Detect tap: screen was touched and now released
-    int count = M5.Touch.getCount();
-    if (count > 0) {
-        auto tp = M5.Touch.getDetail(0);
+    auto tp = M5.Touch.getDetail(0);
+    if (tp.isPressed()) {
         _touchX = tp.x;  _touchY = tp.y;
         _touching = true;
         return -1;
@@ -338,9 +337,8 @@ void GaugeDisplay::drawDTCResultsTab5(const DTC* dtcs, int count, int scrollOffs
 }
 
 int GaugeDisplay::dtcResultsScrollOrBack() {
-    int count = M5.Touch.getCount();
-    if (count > 0) {
-        auto tp = M5.Touch.getDetail(0);
+    auto tp = M5.Touch.getDetail(0);
+    if (tp.isPressed()) {
         _touchY = tp.y;
         _touching = true;
         return 0;
@@ -396,8 +394,8 @@ void GaugeDisplay::drawDTCClearedTab5(bool success) {
 }
 
 bool GaugeDisplay::dtcBackTapped() {
-    int count = M5.Touch.getCount();
-    if (count > 0) {
+    auto tp = M5.Touch.getDetail(0);
+    if (tp.isPressed()) {
         _touching = true;
         return false;
     }
@@ -526,9 +524,8 @@ void GaugeDisplay::drawGaugeEditor(int slot, const GaugeConfig& gauge, int selec
 }
 
 int GaugeDisplay::editorFieldTapped() {
-    int count = M5.Touch.getCount();
-    if (count > 0) {
-        auto tp = M5.Touch.getDetail(0);
+    auto tp = M5.Touch.getDetail(0);
+    if (tp.isPressed()) {
         _touchX = tp.x;  _touchY = tp.y;
         _touching = true;
         return -1;
@@ -612,9 +609,8 @@ void GaugeDisplay::drawFormulaPicker(int currentFormula) {
 }
 
 int GaugeDisplay::formulaPickerTapped() {
-    int count = M5.Touch.getCount();
-    if (count > 0) {
-        auto tp = M5.Touch.getDetail(0);
+    auto tp = M5.Touch.getDetail(0);
+    if (tp.isPressed()) {
         _touchX = tp.x;  _touchY = tp.y;
         _touching = true;
         return -1;
@@ -846,9 +842,8 @@ void GaugeDisplay::drawEditorKeypad(const char* fieldTitle, const char* currentV
 }
 
 int GaugeDisplay::keypadTapped(char* buffer, int bufLen) {
-    int count = M5.Touch.getCount();
-    if (count > 0) {
-        auto tp = M5.Touch.getDetail(0);
+    auto tp = M5.Touch.getDetail(0);
+    if (tp.isPressed()) {
         _touchX = tp.x;  _touchY = tp.y;
         _touching = true;
         return -1;
