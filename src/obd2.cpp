@@ -53,24 +53,35 @@ void OBD2::sendRequest(uint8_t mode, uint16_t pid) {
         frame.data[7] = 0xAA;
     }
 
-    ESP32Can.writeFrame(frame);
+    // Non-blocking write with short timeout to avoid stalling when no bus
+    ESP32Can.writeFrame(frame, 5);
 }
 
 bool OBD2::requestPID(uint8_t mode, uint16_t pid, uint8_t* dataA, uint8_t* dataB, uint32_t timeoutMs) {
     if (!_initialized) return false;
 
-    // Flush any pending frames first
+    // Back off when bus is clearly disconnected — skip most polls to keep UI responsive
+    if (_errorCount > 10) {
+        _connected = false;
+        // Only attempt once every ~2 seconds (20 skipped calls at 100ms poll interval)
+        _skipCount++;
+        if (_skipCount < 20) return false;
+        _skipCount = 0;
+        timeoutMs = 15;  // Very short timeout for reconnection probe
+    }
+
+    // Flush any pending frames first (non-blocking)
     CanFrame flush;
     while (ESP32Can.readFrame(flush, 0)) { /* discard */ }
 
-    // Send the request
+    // Send the request (non-blocking, 5ms TX timeout)
     sendRequest(mode, pid);
 
-    // Wait for matching response
+    // Wait for matching response — use short read waits to stay responsive
     uint32_t start = millis();
     while (millis() - start < timeoutMs) {
         CanFrame rxFrame;
-        if (ESP32Can.readFrame(rxFrame, 10)) {
+        if (ESP32Can.readFrame(rxFrame, 5)) {
             // Accept responses from 0x7E8-0x7EF
             if (rxFrame.identifier >= OBD2_RESPONSE_ID &&
                 rxFrame.identifier <= 0x7EF) {
@@ -102,9 +113,6 @@ bool OBD2::requestPID(uint8_t mode, uint16_t pid, uint8_t* dataA, uint8_t* dataB
 
     // Timeout - no response
     _errorCount++;
-    if (_errorCount > 10) {
-        _connected = false;
-    }
     return false;
 }
 

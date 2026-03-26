@@ -46,6 +46,7 @@ private:
     bool _initialized = false;
     bool _connected   = false;
     int  _errorCount  = 0;
+    int  _skipCount   = 0;   // Back-off counter when bus disconnected
 
     static constexpr uint32_t OBD2_REQUEST_ID  = 0x7DF;
     static constexpr uint32_t OBD2_RESPONSE_ID = 0x7E8;
