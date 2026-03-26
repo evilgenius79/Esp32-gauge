@@ -344,18 +344,19 @@ bool GaugeDisplay::dtcBackTapped() {
 
 // =============================================================================
 // Gauge Editor — fullscreen touchscreen config editor
+// All 13 fields + formula selector + CAN speed toggle
 // =============================================================================
 
 static const char* EDITOR_FIELDS[] = {
     "NAME", "UNITS", "LABEL", "MODE", "PID",
-    "MIN", "MAX", "WARN", "DANGER"
+    "MIN", "MAX", "WARN", "DANGER",
+    "SCALE DIV", "DIVISIONS", "DATA BYTES", "DECIMALS", "FORMULA",
 };
-static constexpr int NUM_FIELDS = 9;
-static constexpr int ED_ROW_H = 55;
-static constexpr int ED_START_Y = 80;
+static constexpr int NUM_FIELDS = 14;
+static constexpr int ED_ROW_H = 42;
+static constexpr int ED_START_Y = 70;
 static constexpr int ED_LABEL_X = 100;
-static constexpr int ED_VALUE_X = 700;
-static constexpr int ED_BTN_W = 500;
+static constexpr int ED_BTN_W = 550;
 
 void GaugeDisplay::drawGaugeEditor(int slot, const GaugeConfig& gauge, int selectedField) {
     M5.Display.fillScreen(C_BLACK);
@@ -366,11 +367,11 @@ void GaugeDisplay::drawGaugeEditor(int slot, const GaugeConfig& gauge, int selec
     M5.Display.setTextColor(C_ORANGE);
     char title[32];
     snprintf(title, sizeof(title), "EDIT GAUGE %d: %s", slot + 1, gauge.name);
-    M5.Display.drawString(title, TCX, 20);
-    M5.Display.drawFastHLine(TCX - 300, 60, 600, C_DKGRAY);
+    M5.Display.drawString(title, TCX, 12);
+    M5.Display.drawFastHLine(TCX - 300, 48, 600, C_DKGRAY);
 
     // Fields
-    M5.Display.setFont(&fonts::FreeSansBold9pt7b);
+    M5.Display.setFont(&fonts::Font2);
     char valBuf[24];
 
     for (int i = 0; i < NUM_FIELDS; i++) {
@@ -378,58 +379,81 @@ void GaugeDisplay::drawGaugeEditor(int slot, const GaugeConfig& gauge, int selec
         int rowX = TCX - ED_BTN_W / 2;
 
         if (i == selectedField) {
-            M5.Display.fillRoundRect(rowX, y - 5, ED_BTN_W, 42, 8, 0x1082);  // dark highlight
-            M5.Display.drawRoundRect(rowX, y - 5, ED_BTN_W, 42, 8, C_ORANGE);
+            M5.Display.fillRoundRect(rowX, y - 3, ED_BTN_W, 34, 6, 0x1082);
+            M5.Display.drawRoundRect(rowX, y - 3, ED_BTN_W, 34, 6, C_ORANGE);
         }
 
         // Label
         M5.Display.setTextDatum(ML_DATUM);
         M5.Display.setTextColor(C_GRAY);
-        M5.Display.drawString(EDITOR_FIELDS[i], ED_LABEL_X, y + 16);
+        M5.Display.drawString(EDITOR_FIELDS[i], ED_LABEL_X, y + 13);
 
         // Value
         M5.Display.setTextDatum(MR_DATUM);
         M5.Display.setTextColor(C_WHITE);
 
         switch (i) {
-            case 0: snprintf(valBuf, sizeof(valBuf), "%s", gauge.name); break;
-            case 1: snprintf(valBuf, sizeof(valBuf), "%s", gauge.units); break;
-            case 2: snprintf(valBuf, sizeof(valBuf), "%s", gauge.scaleLabel); break;
-            case 3: snprintf(valBuf, sizeof(valBuf), "0x%02X", gauge.mode); break;
-            case 4: snprintf(valBuf, sizeof(valBuf), "0x%04X", gauge.pid); break;
-            case 5: snprintf(valBuf, sizeof(valBuf), "%.1f", gauge.minVal); break;
-            case 6: snprintf(valBuf, sizeof(valBuf), "%.1f", gauge.maxVal); break;
-            case 7: snprintf(valBuf, sizeof(valBuf), "%.1f", gauge.warnVal); break;
-            case 8: snprintf(valBuf, sizeof(valBuf), "%.1f", gauge.dangerVal); break;
+            case 0:  snprintf(valBuf, sizeof(valBuf), "%s", gauge.name); break;
+            case 1:  snprintf(valBuf, sizeof(valBuf), "%s", gauge.units); break;
+            case 2:  snprintf(valBuf, sizeof(valBuf), "%s", gauge.scaleLabel); break;
+            case 3:  snprintf(valBuf, sizeof(valBuf), "0x%02X", gauge.mode); break;
+            case 4:  snprintf(valBuf, sizeof(valBuf), "0x%04X", gauge.pid); break;
+            case 5:  snprintf(valBuf, sizeof(valBuf), "%.1f", gauge.minVal); break;
+            case 6:  snprintf(valBuf, sizeof(valBuf), "%.1f", gauge.maxVal); break;
+            case 7:  snprintf(valBuf, sizeof(valBuf), "%.1f", gauge.warnVal); break;
+            case 8:  snprintf(valBuf, sizeof(valBuf), "%.1f", gauge.dangerVal); break;
+            case 9:  snprintf(valBuf, sizeof(valBuf), "%.1f", gauge.scaleDivisor); break;
+            case 10: snprintf(valBuf, sizeof(valBuf), "%d", gauge.majorDivisions); break;
+            case 11: snprintf(valBuf, sizeof(valBuf), "%d", gauge.dataBytes); break;
+            case 12: snprintf(valBuf, sizeof(valBuf), "%d", gauge.decimals); break;
+            case 13: {
+                int f = gauge.formula;
+                if (f >= 0 && f < NUM_DECODE_FORMULAS)
+                    snprintf(valBuf, sizeof(valBuf), "%s", DECODE_NAMES[f]);
+                else
+                    snprintf(valBuf, sizeof(valBuf), "?");
+                break;
+            }
         }
-        M5.Display.drawString(valBuf, SCREEN_W - ED_LABEL_X, y + 16);
+        M5.Display.drawString(valBuf, SCREEN_W - ED_LABEL_X, y + 13);
     }
 
-    // Bottom buttons: SAVE / RESET / CANCEL
-    int btnY = ED_START_Y + NUM_FIELDS * ED_ROW_H + 10;
-    int btnW = 180;
-    int btnH = 50;
-    int gap = 30;
-    int startX = TCX - (3 * btnW + 2 * gap) / 2;
+    // Bottom row: SAVE / RESET / CANCEL + CAN speed
+    int btnY = ED_START_Y + NUM_FIELDS * ED_ROW_H + 6;
+    int btnW = 150;
+    int btnH = 44;
+    int gap = 20;
+    int startX = TCX - (4 * btnW + 3 * gap) / 2;
 
     // SAVE
-    M5.Display.fillRoundRect(startX, btnY, btnW, btnH, 10, 0x0400);  // dark green
+    M5.Display.fillRoundRect(startX, btnY, btnW, btnH, 10, 0x0400);
     M5.Display.drawRoundRect(startX, btnY, btnW, btnH, 10, 0x07E0);
     M5.Display.setTextDatum(MC_DATUM);
     M5.Display.setTextColor(0x07E0);
     M5.Display.drawString("SAVE", startX + btnW / 2, btnY + btnH / 2);
 
     // RESET
-    M5.Display.fillRoundRect(startX + btnW + gap, btnY, btnW, btnH, 10, 0x4000);
-    M5.Display.drawRoundRect(startX + btnW + gap, btnY, btnW, btnH, 10, C_ORANGE);
+    int x2 = startX + btnW + gap;
+    M5.Display.fillRoundRect(x2, btnY, btnW, btnH, 10, 0x4000);
+    M5.Display.drawRoundRect(x2, btnY, btnW, btnH, 10, C_ORANGE);
     M5.Display.setTextColor(C_ORANGE);
-    M5.Display.drawString("RESET", startX + btnW + gap + btnW / 2, btnY + btnH / 2);
+    M5.Display.drawString("RESET", x2 + btnW / 2, btnY + btnH / 2);
 
     // CANCEL
-    M5.Display.fillRoundRect(startX + 2 * (btnW + gap), btnY, btnW, btnH, 10, 0x4000);
-    M5.Display.drawRoundRect(startX + 2 * (btnW + gap), btnY, btnW, btnH, 10, C_RED);
+    int x3 = startX + 2 * (btnW + gap);
+    M5.Display.fillRoundRect(x3, btnY, btnW, btnH, 10, 0x4000);
+    M5.Display.drawRoundRect(x3, btnY, btnW, btnH, 10, C_RED);
     M5.Display.setTextColor(C_RED);
-    M5.Display.drawString("CANCEL", startX + 2 * (btnW + gap) + btnW / 2, btnY + btnH / 2);
+    M5.Display.drawString("CANCEL", x3 + btnW / 2, btnY + btnH / 2);
+
+    // CAN SPEED toggle
+    int x4 = startX + 3 * (btnW + gap);
+    char canLabel[16];
+    snprintf(canLabel, sizeof(canLabel), "CAN %luk", canBusSpeed);
+    M5.Display.fillRoundRect(x4, btnY, btnW, btnH, 10, 0x1082);
+    M5.Display.drawRoundRect(x4, btnY, btnW, btnH, 10, C_WHITE);
+    M5.Display.setTextColor(C_WHITE);
+    M5.Display.drawString(canLabel, x4 + btnW / 2, btnY + btnH / 2);
 }
 
 int GaugeDisplay::editorFieldTapped() {
@@ -445,48 +469,115 @@ int GaugeDisplay::editorFieldTapped() {
 
     // Check field rows
     for (int i = 0; i < NUM_FIELDS; i++) {
-        int rowY = ED_START_Y + i * ED_ROW_H - 5;
+        int rowY = ED_START_Y + i * ED_ROW_H - 3;
         int rowX = TCX - ED_BTN_W / 2;
         if (tx >= rowX && tx <= rowX + ED_BTN_W &&
-            ty >= rowY && ty <= rowY + 42) {
+            ty >= rowY && ty <= rowY + 34) {
             return i;
         }
     }
 
     // Check bottom buttons
-    int btnY = ED_START_Y + NUM_FIELDS * ED_ROW_H + 10;
-    int btnW = 180;
-    int btnH = 50;
-    int gap = 30;
-    int startX = TCX - (3 * btnW + 2 * gap) / 2;
+    int btnY = ED_START_Y + NUM_FIELDS * ED_ROW_H + 6;
+    int btnW = 150;
+    int btnH = 44;
+    int gap = 20;
+    int startX = TCX - (4 * btnW + 3 * gap) / 2;
 
     if (ty >= btnY && ty <= btnY + btnH) {
-        if (tx >= startX && tx <= startX + btnW) return 99;              // SAVE
-        if (tx >= startX + btnW + gap && tx <= startX + 2 * btnW + gap) return 98; // RESET
-        if (tx >= startX + 2 * (btnW + gap) && tx <= startX + 3 * btnW + 2 * gap) return 97; // CANCEL
+        if (tx >= startX && tx <= startX + btnW) return 99;                                    // SAVE
+        if (tx >= startX + btnW + gap && tx <= startX + 2 * btnW + gap) return 98;             // RESET
+        if (tx >= startX + 2 * (btnW + gap) && tx <= startX + 3 * btnW + 2 * gap) return 97;  // CANCEL
+        if (tx >= startX + 3 * (btnW + gap) && tx <= startX + 4 * btnW + 3 * gap) return 96;  // CAN SPEED
     }
 
     return -1;
 }
 
 // =============================================================================
-// On-screen keypad for editing values
+// Formula picker — scrollable list of decode formulas
 // =============================================================================
 
-static constexpr int KP_KEYS_PER_ROW = 6;
-static constexpr int KP_KEY_W = 100;
-static constexpr int KP_KEY_H = 70;
-static constexpr int KP_GAP = 10;
-static constexpr int KP_START_Y = 280;
+void GaugeDisplay::drawFormulaPicker(int currentFormula) {
+    M5.Display.fillScreen(C_BLACK);
 
-// Row 1: 1-6, Row 2: 7-0 . -, Row 3: A-F, Row 4: DEL OK
+    M5.Display.setFont(&fonts::FreeSansBold12pt7b);
+    M5.Display.setTextDatum(TC_DATUM);
+    M5.Display.setTextColor(C_ORANGE);
+    M5.Display.drawString("SELECT DECODE FORMULA", TCX, 20);
+    M5.Display.drawFastHLine(TCX - 300, 55, 600, C_DKGRAY);
+
+    int fBtnW = 550;
+    int fBtnH = 42;
+    int fGap = 4;
+    int fStartY = 65;
+    int fX = TCX - fBtnW / 2;
+
+    M5.Display.setFont(&fonts::Font2);
+
+    for (int i = 0; i < NUM_DECODE_FORMULAS; i++) {
+        int y = fStartY + i * (fBtnH + fGap);
+        if (y + fBtnH > SCREEN_H) break;
+
+        if (i == currentFormula) {
+            M5.Display.fillRoundRect(fX, y, fBtnW, fBtnH, 8, 0x0400);
+            M5.Display.drawRoundRect(fX, y, fBtnW, fBtnH, 8, 0x07E0);
+            M5.Display.setTextColor(0x07E0);
+        } else {
+            M5.Display.drawRoundRect(fX, y, fBtnW, fBtnH, 8, C_DKGRAY);
+            M5.Display.setTextColor(C_GRAY);
+        }
+
+        M5.Display.setTextDatum(ML_DATUM);
+        char label[32];
+        snprintf(label, sizeof(label), "%d: %s", i, DECODE_NAMES[i]);
+        M5.Display.drawString(label, fX + 15, y + fBtnH / 2);
+    }
+}
+
+int GaugeDisplay::formulaPickerTapped() {
+    auto touch = M5.Touch.getDetail();
+    if (!touch.wasClicked()) return -1;
+
+    uint32_t now = millis();
+    if (now - _lastTouchTime < 300) return -1;
+    _lastTouchTime = now;
+
+    int fBtnW = 550;
+    int fBtnH = 42;
+    int fGap = 4;
+    int fStartY = 65;
+    int fX = TCX - fBtnW / 2;
+
+    for (int i = 0; i < NUM_DECODE_FORMULAS; i++) {
+        int y = fStartY + i * (fBtnH + fGap);
+        if (touch.x >= fX && touch.x <= fX + fBtnW &&
+            touch.y >= y && touch.y <= y + fBtnH) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// =============================================================================
+// On-screen keypad — full alphabet + numbers + hex + symbols
+// =============================================================================
+
+static constexpr int KP_KEYS_PER_ROW = 10;
+static constexpr int KP_KEY_W = 70;
+static constexpr int KP_KEY_H = 58;
+static constexpr int KP_GAP = 6;
+static constexpr int KP_START_Y = 230;
+
+// 5 rows of 10 keys
 static const char* KP_LABELS[] = {
-    "1", "2", "3", "4", "5", "6",
-    "7", "8", "9", "0", ".", "-",
-    "A", "B", "C", "D", "E", "F",
-    "DEL", " ", " ", " ", " ", "OK"
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
+    "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P",
+    "A", "S", "D", "F", "G", "H", "J", "K", "L", " ",
+    "Z", "X", "C", "V", "B", "N", "M", ".", "-", "/",
+    "DEL", " ", " ", "SPC", " ", " ", " ", " ", " ", "OK",
 };
-static constexpr int KP_NUM_KEYS = 24;
+static constexpr int KP_NUM_KEYS = 50;
 
 void GaugeDisplay::drawEditorKeypad(const char* fieldTitle, const char* currentValue) {
     M5.Display.fillScreen(C_BLACK);
@@ -495,51 +586,67 @@ void GaugeDisplay::drawEditorKeypad(const char* fieldTitle, const char* currentV
     M5.Display.setFont(&fonts::FreeSansBold12pt7b);
     M5.Display.setTextDatum(TC_DATUM);
     M5.Display.setTextColor(C_ORANGE);
-    M5.Display.drawString(fieldTitle, TCX, 30);
+    M5.Display.drawString(fieldTitle, TCX, 20);
 
     // Current value display
-    M5.Display.fillRoundRect(TCX - 250, 80, 500, 60, 10, 0x1082);
-    M5.Display.drawRoundRect(TCX - 250, 80, 500, 60, 10, C_GRAY);
+    M5.Display.fillRoundRect(TCX - 300, 65, 600, 55, 10, 0x1082);
+    M5.Display.drawRoundRect(TCX - 300, 65, 600, 55, 10, C_GRAY);
     M5.Display.setFont(&fonts::FreeSansBold18pt7b);
     M5.Display.setTextDatum(MC_DATUM);
     M5.Display.setTextColor(C_WHITE);
-    M5.Display.drawString(currentValue, TCX, 110);
+    M5.Display.drawString(currentValue, TCX, 92);
 
-    // Instruction
-    M5.Display.setFont(&fonts::FreeSansBold9pt7b);
+    // Hint
+    M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextColor(C_GRAY);
-    M5.Display.drawString("For hex PID: use 0-9 and A-F", TCX, 170);
-    M5.Display.drawString("For text: type letters with keypad", TCX, 195);
+    M5.Display.setTextDatum(TC_DATUM);
+    M5.Display.drawString("Hex PID: use 0-9 A-F  |  Text: full keyboard", TCX, 135);
+
+    // Max length indicator
+    char lenBuf[16];
+    snprintf(lenBuf, sizeof(lenBuf), "%d chars", (int)strlen(currentValue));
+    M5.Display.drawString(lenBuf, TCX, 155);
 
     // Draw keys
-    M5.Display.setFont(&fonts::FreeSansBold12pt7b);
+    M5.Display.setFont(&fonts::FreeSansBold9pt7b);
     int totalW = KP_KEYS_PER_ROW * KP_KEY_W + (KP_KEYS_PER_ROW - 1) * KP_GAP;
     int kpStartX = TCX - totalW / 2;
 
     for (int i = 0; i < KP_NUM_KEYS; i++) {
+        if (KP_LABELS[i][0] == ' ' && strlen(KP_LABELS[i]) == 1) continue;
+
         int row = i / KP_KEYS_PER_ROW;
         int col = i % KP_KEYS_PER_ROW;
         int x = kpStartX + col * (KP_KEY_W + KP_GAP);
         int y = KP_START_Y + row * (KP_KEY_H + KP_GAP);
 
-        if (KP_LABELS[i][0] == ' ') continue;  // Skip empty slots
-
         uint16_t bgColor = C_DKGRAY;
         uint16_t fgColor = C_WHITE;
 
+        // Special keys
         if (strcmp(KP_LABELS[i], "OK") == 0) {
             bgColor = 0x0400; fgColor = 0x07E0;
         } else if (strcmp(KP_LABELS[i], "DEL") == 0) {
             bgColor = 0x4000; fgColor = C_RED;
-        } else if (i >= 12 && i < 18) {
-            fgColor = C_ORANGE;  // Hex letters
+        } else if (strcmp(KP_LABELS[i], "SPC") == 0) {
+            fgColor = C_GRAY;
+        } else if (i < 10) {
+            fgColor = 0xFFE0;  // Yellow for numbers
         }
 
-        M5.Display.fillRoundRect(x, y, KP_KEY_W, KP_KEY_H, 8, bgColor);
-        M5.Display.drawRoundRect(x, y, KP_KEY_W, KP_KEY_H, 8, fgColor);
+        // Special width for SPC and DEL/OK
+        int keyW = KP_KEY_W;
+        if (strcmp(KP_LABELS[i], "SPC") == 0) {
+            keyW = KP_KEY_W * 4 + KP_GAP * 3;  // Wide space bar
+        } else if (strcmp(KP_LABELS[i], "DEL") == 0 || strcmp(KP_LABELS[i], "OK") == 0) {
+            keyW = KP_KEY_W;
+        }
+
+        M5.Display.fillRoundRect(x, y, keyW, KP_KEY_H, 6, bgColor);
+        M5.Display.drawRoundRect(x, y, keyW, KP_KEY_H, 6, fgColor);
         M5.Display.setTextDatum(MC_DATUM);
         M5.Display.setTextColor(fgColor);
-        M5.Display.drawString(KP_LABELS[i], x + KP_KEY_W / 2, y + KP_KEY_H / 2);
+        M5.Display.drawString(KP_LABELS[i], x + keyW / 2, y + KP_KEY_H / 2);
     }
 }
 
@@ -558,21 +665,31 @@ int GaugeDisplay::keypadTapped(char* buffer, int bufLen) {
     int kpStartX = TCX - totalW / 2;
 
     for (int i = 0; i < KP_NUM_KEYS; i++) {
-        if (KP_LABELS[i][0] == ' ') continue;
+        if (KP_LABELS[i][0] == ' ' && strlen(KP_LABELS[i]) == 1) continue;
 
         int row = i / KP_KEYS_PER_ROW;
         int col = i % KP_KEYS_PER_ROW;
         int x = kpStartX + col * (KP_KEY_W + KP_GAP);
         int y = KP_START_Y + row * (KP_KEY_H + KP_GAP);
 
-        if (tx >= x && tx <= x + KP_KEY_W && ty >= y && ty <= y + KP_KEY_H) {
+        int keyW = KP_KEY_W;
+        if (strcmp(KP_LABELS[i], "SPC") == 0) {
+            keyW = KP_KEY_W * 4 + KP_GAP * 3;
+        }
+
+        if (tx >= x && tx <= x + keyW && ty >= y && ty <= y + KP_KEY_H) {
             if (strcmp(KP_LABELS[i], "OK") == 0) return 1;   // Done
             if (strcmp(KP_LABELS[i], "DEL") == 0) {
                 int len = strlen(buffer);
                 if (len > 0) buffer[len - 1] = '\0';
                 return 0;
             }
-            // Append character
+            if (strcmp(KP_LABELS[i], "SPC") == 0) {
+                int len = strlen(buffer);
+                if (len < bufLen - 1) { buffer[len] = ' '; buffer[len + 1] = '\0'; }
+                return 0;
+            }
+            // Regular character key
             int len = strlen(buffer);
             if (len < bufLen - 1) {
                 buffer[len] = KP_LABELS[i][0];

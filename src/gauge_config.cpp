@@ -5,6 +5,9 @@
 // Mutable gauge array — initialized from defaults, then overwritten by NVS
 GaugeConfig GAUGES[NUM_GAUGES];
 
+// CAN bus speed (kbps) — default 500
+uint32_t canBusSpeed = 500;
+
 static Preferences prefs;
 static const char* NVS_NAMESPACE = "gauges";
 
@@ -22,8 +25,10 @@ void loadGaugeConfigs() {
                 prefs.getBytes(key, &GAUGES[i], sizeof(GaugeConfig));
             }
         }
+        canBusSpeed = prefs.getUInt("canspd", 500);
+        if (canBusSpeed != 250 && canBusSpeed != 500) canBusSpeed = 500;
         prefs.end();
-        Serial.println("[NVS] Loaded saved gauge configs");
+        Serial.printf("[NVS] Loaded configs, CAN speed: %lu kbps\n", canBusSpeed);
     } else {
         Serial.println("[NVS] No saved configs, using defaults");
     }
@@ -46,4 +51,12 @@ void resetGaugeConfig(int index) {
     memcpy(&GAUGES[index], &DEFAULT_GAUGES[index], sizeof(GaugeConfig));
     saveGaugeConfig(index);
     Serial.printf("[NVS] Reset gauge %d to default\n", index);
+}
+
+void saveCanSpeed() {
+    if (prefs.begin(NVS_NAMESPACE, false)) {
+        prefs.putUInt("canspd", canBusSpeed);
+        prefs.end();
+        Serial.printf("[NVS] Saved CAN speed: %lu kbps\n", canBusSpeed);
+    }
 }

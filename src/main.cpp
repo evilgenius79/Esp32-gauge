@@ -48,6 +48,7 @@ enum Tab5State {
     T5_DTC_CLEARED,
     T5_EDITOR,
     T5_KEYPAD,
+    T5_FORMULA_PICKER,
 };
 
 Tab5State tab5State = T5_GAUGE;
@@ -92,36 +93,46 @@ void setup() {
 // Helper: apply keypad result to the editCopy field
 static void applyKeypadToField(int field, const char* buf, GaugeConfig& gc) {
     switch (field) {
-        case 0: strncpy(gc.name, buf, sizeof(gc.name) - 1); gc.name[sizeof(gc.name)-1] = '\0'; break;
-        case 1: strncpy(gc.units, buf, sizeof(gc.units) - 1); gc.units[sizeof(gc.units)-1] = '\0'; break;
-        case 2: strncpy(gc.scaleLabel, buf, sizeof(gc.scaleLabel) - 1); gc.scaleLabel[sizeof(gc.scaleLabel)-1] = '\0'; break;
-        case 3: gc.mode = (uint8_t)strtol(buf, nullptr, 16); break;
-        case 4: gc.pid  = (uint16_t)strtol(buf, nullptr, 16); break;
-        case 5: gc.minVal    = atof(buf); break;
-        case 6: gc.maxVal    = atof(buf); break;
-        case 7: gc.warnVal   = atof(buf); break;
-        case 8: gc.dangerVal = atof(buf); break;
+        case 0:  strncpy(gc.name, buf, sizeof(gc.name) - 1); gc.name[sizeof(gc.name)-1] = '\0'; break;
+        case 1:  strncpy(gc.units, buf, sizeof(gc.units) - 1); gc.units[sizeof(gc.units)-1] = '\0'; break;
+        case 2:  strncpy(gc.scaleLabel, buf, sizeof(gc.scaleLabel) - 1); gc.scaleLabel[sizeof(gc.scaleLabel)-1] = '\0'; break;
+        case 3:  gc.mode = (uint8_t)strtol(buf, nullptr, 16); break;
+        case 4:  gc.pid  = (uint16_t)strtol(buf, nullptr, 16); break;
+        case 5:  gc.minVal        = atof(buf); break;
+        case 6:  gc.maxVal        = atof(buf); break;
+        case 7:  gc.warnVal       = atof(buf); break;
+        case 8:  gc.dangerVal     = atof(buf); break;
+        case 9:  gc.scaleDivisor  = atof(buf); break;
+        case 10: gc.majorDivisions = atoi(buf); break;
+        case 11: gc.dataBytes     = (uint8_t)atoi(buf); break;
+        case 12: gc.decimals      = (uint8_t)atoi(buf); break;
+        // case 13 (formula) is handled by formula picker, not keypad
     }
 }
 
 // Helper: get current field value as string for keypad
 static void fieldToString(int field, const GaugeConfig& gc, char* buf, int bufLen) {
     switch (field) {
-        case 0: snprintf(buf, bufLen, "%s", gc.name); break;
-        case 1: snprintf(buf, bufLen, "%s", gc.units); break;
-        case 2: snprintf(buf, bufLen, "%s", gc.scaleLabel); break;
-        case 3: snprintf(buf, bufLen, "%02X", gc.mode); break;
-        case 4: snprintf(buf, bufLen, "%04X", gc.pid); break;
-        case 5: snprintf(buf, bufLen, "%.1f", gc.minVal); break;
-        case 6: snprintf(buf, bufLen, "%.1f", gc.maxVal); break;
-        case 7: snprintf(buf, bufLen, "%.1f", gc.warnVal); break;
-        case 8: snprintf(buf, bufLen, "%.1f", gc.dangerVal); break;
+        case 0:  snprintf(buf, bufLen, "%s", gc.name); break;
+        case 1:  snprintf(buf, bufLen, "%s", gc.units); break;
+        case 2:  snprintf(buf, bufLen, "%s", gc.scaleLabel); break;
+        case 3:  snprintf(buf, bufLen, "%02X", gc.mode); break;
+        case 4:  snprintf(buf, bufLen, "%04X", gc.pid); break;
+        case 5:  snprintf(buf, bufLen, "%.1f", gc.minVal); break;
+        case 6:  snprintf(buf, bufLen, "%.1f", gc.maxVal); break;
+        case 7:  snprintf(buf, bufLen, "%.1f", gc.warnVal); break;
+        case 8:  snprintf(buf, bufLen, "%.1f", gc.dangerVal); break;
+        case 9:  snprintf(buf, bufLen, "%.1f", gc.scaleDivisor); break;
+        case 10: snprintf(buf, bufLen, "%d", gc.majorDivisions); break;
+        case 11: snprintf(buf, bufLen, "%d", gc.dataBytes); break;
+        case 12: snprintf(buf, bufLen, "%d", gc.decimals); break;
     }
 }
 
 static const char* FIELD_NAMES[] = {
     "NAME", "UNITS", "LABEL", "MODE (hex)", "PID (hex)",
-    "MIN VALUE", "MAX VALUE", "WARNING", "DANGER"
+    "MIN VALUE", "MAX VALUE", "WARNING", "DANGER",
+    "SCALE DIVISOR", "MAJOR DIVS", "DATA BYTES", "DECIMALS", "FORMULA"
 };
 
 void loop() {
@@ -220,14 +231,20 @@ void loop() {
 
     case T5_EDITOR: {
         int field = display.editorFieldTapped();
-        if (field >= 0 && field < 9) {
-            // Open keypad for this field
+        if (field >= 0 && field <= 12) {
+            // Open keypad for fields 0-12
             editField = field;
             fieldToString(field, editCopy, keypadBuf, sizeof(keypadBuf));
             keypadTitle = FIELD_NAMES[field];
             tab5State = T5_KEYPAD;
             display.clearScreen();
             display.drawEditorKeypad(keypadTitle, keypadBuf);
+        } else if (field == 13) {
+            // Open formula picker for FORMULA field
+            editField = 13;
+            tab5State = T5_FORMULA_PICKER;
+            display.clearScreen();
+            display.drawFormulaPicker(editCopy.formula);
         } else if (field == 99) {
             // SAVE
             memcpy(&GAUGES[editGaugeIdx], &editCopy, sizeof(GaugeConfig));
@@ -245,6 +262,13 @@ void loop() {
             Serial.println("[EDIT] Cancelled");
             tab5State = T5_GAUGE;
             needsFullRedraw = true;
+        } else if (field == 96) {
+            // CAN SPEED toggle: 250 <-> 500
+            canBusSpeed = (canBusSpeed == 500) ? 250 : 500;
+            saveCanSpeed();
+            Serial.printf("[EDIT] CAN speed toggled to %lu kbps\n", canBusSpeed);
+            display.clearScreen();
+            display.drawGaugeEditor(editSlot, editCopy, -1);
         }
         break;
     }
@@ -260,6 +284,18 @@ void loop() {
             tab5State = T5_EDITOR;
             display.clearScreen();
             display.drawGaugeEditor(editSlot, editCopy, editField);
+        }
+        break;
+    }
+
+    case T5_FORMULA_PICKER: {
+        int picked = display.formulaPickerTapped();
+        if (picked >= 0) {
+            editCopy.formula = (DecodeFormula)picked;
+            Serial.printf("[EDIT] Formula set to %d: %s\n", picked, DECODE_NAMES[picked]);
+            tab5State = T5_EDITOR;
+            display.clearScreen();
+            display.drawGaugeEditor(editSlot, editCopy, 13);
         }
         break;
     }

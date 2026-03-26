@@ -108,9 +108,13 @@ public:
 
     // Gauge editor
     void drawGaugeEditor(int slot, const GaugeConfig& gauge, int selectedField);
-    int  editorFieldTapped();  // Returns field index 0-8 or -1, 99=save, 98=cancel
+    int  editorFieldTapped();  // Returns field index 0-13 or -1, 99=save, 98=reset, 97=cancel, 96=CAN speed
     void drawEditorKeypad(const char* title, const char* currentValue);
     int  keypadTapped(char* buffer, int bufLen);  // Returns: 0=key, 1=done, -1=none
+
+    // Formula picker
+    void drawFormulaPicker(int currentFormula);
+    int  formulaPickerTapped();  // Returns formula index 0-13, or -1
 
 #else
     // --- CrowPanel: single gauge + DTC menus ---

@@ -1,16 +1,16 @@
 #include "obd2.h"
+#include "gauges.h"
 #include <ESP32-TWAI-CAN.hpp>
 
 bool OBD2::begin(int txPin, int rxPin) {
     if (_initialized) return true;
 
-    // 500 kbps is the standard OBD2 CAN bus speed
-    if (!ESP32Can.begin(ESP32Can.convertSpeed(500), txPin, rxPin, 10, 10)) {
-        Serial.println("[OBD2] CAN bus init failed");
+    if (!ESP32Can.begin(ESP32Can.convertSpeed(canBusSpeed), txPin, rxPin, 10, 10)) {
+        Serial.printf("[OBD2] CAN bus init failed at %lu kbps\n", canBusSpeed);
         return false;
     }
 
-    Serial.println("[OBD2] CAN bus initialized (500 kbps)");
+    Serial.printf("[OBD2] CAN bus initialized (%lu kbps)\n", canBusSpeed);
     _initialized = true;
     _connected = false;
     _errorCount = 0;
