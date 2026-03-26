@@ -50,6 +50,9 @@ int fullscreenSlot = -1;  // -1 = normal 2x2 mode, 0-3 = single slot expanded
 // Data logger
 DataLogger dataLogger;
 
+// OBD polling — disabled by default, enable from tools menu
+bool obdPollingEnabled = false;
+
 // State machine
 enum Tab5State {
     T5_GAUGE,
@@ -98,12 +101,8 @@ void setup() {
     loadGaugeConfigs();
     display.begin();
 
-    Serial.println("[INIT] CAN bus...");
-    if (obd2.begin(PIN_CAN_TX, PIN_CAN_RX)) {
-        Serial.println("[INIT] CAN bus OK");
-    } else {
-        Serial.println("[INIT] CAN bus FAILED - check wiring");
-    }
+    // CAN bus NOT initialized here — user enables OBD polling from tools menu
+    Serial.println("[INIT] CAN bus deferred — enable from tools menu");
 
     for (int i = 0; i < 4; i++) {
         gaugeValues[i] = GAUGES[gaugeIndices[i]].minVal;
@@ -182,7 +181,7 @@ void loop() {
                 Serial.println("[DTC] Opening diagnostics menu");
                 tab5State = T5_DTC_MENU;
                 display.clearScreen();
-                display.drawDTCMenuTab5(-1, dataLogger.isLogging(), peakHoldEnabled);
+                display.drawDTCMenuTab5(-1, obdPollingEnabled, dataLogger.isLogging(), peakHoldEnabled);
                 break;
             }
         }
@@ -233,32 +232,35 @@ void loop() {
             break;
         }
 
-        // Poll one gauge per cycle (round-robin)
+        // Redraw gauges and optionally poll OBD
         uint32_t now = millis();
         if (now - lastPollTime >= POLL_INTERVAL_MS) {
             lastPollTime = now;
 
-            const GaugeConfig& g = GAUGES[gaugeIndices[pollSlot]];
-            uint8_t a = 0, b = 0;
+            // Only poll CAN bus when OBD is enabled
+            if (obdPollingEnabled) {
+                const GaugeConfig& g = GAUGES[gaugeIndices[pollSlot]];
+                uint8_t a = 0, b = 0;
 
-            if (obd2.requestPID(g.mode, g.pid, &a, &b, 50)) {
-                float val = decodeOBD2(g, a, b);
-                gaugeValues[pollSlot] = val;
-                lastCanDataTime = now;
+                if (obd2.requestPID(g.mode, g.pid, &a, &b, 50)) {
+                    float val = decodeOBD2(g, a, b);
+                    gaugeValues[pollSlot] = val;
+                    lastCanDataTime = now;
 
-                // Peak/min tracking
-                if (val > peakValues[pollSlot]) peakValues[pollSlot] = val;
-                if (val < minValues[pollSlot])  minValues[pollSlot] = val;
+                    // Peak/min tracking
+                    if (val > peakValues[pollSlot]) peakValues[pollSlot] = val;
+                    if (val < minValues[pollSlot])  minValues[pollSlot] = val;
 
-                // CSV data logging
-                if (dataLogger.isLogging()) {
-                    dataLogger.logRow(gaugeIndices, gaugeValues, now);
-                }
+                    // CSV data logging
+                    if (dataLogger.isLogging()) {
+                        dataLogger.logRow(gaugeIndices, gaugeValues, now);
+                    }
 
-                if (sleeping) {
-                    sleeping = false;
-                    display.setBrightness(70);
-                    needsFullRedraw = true;
+                    if (sleeping) {
+                        sleeping = false;
+                        display.setBrightness(70);
+                        needsFullRedraw = true;
+                    }
                 }
             }
 
@@ -274,7 +276,7 @@ void loop() {
                     display.drawDTCButton();
                 }
 
-                if (now - lastCanDataTime > SLEEP_TIMEOUT_MS && lastCanDataTime > 0) {
+                if (obdPollingEnabled && now - lastCanDataTime > SLEEP_TIMEOUT_MS && lastCanDataTime > 0) {
                     sleeping = true;
                     display.setBrightness(0);
                 }
@@ -363,12 +365,31 @@ void loop() {
     case T5_DTC_MENU: {
         int item = display.dtcMenuTapped();
         if (item == 0) {
+            // Toggle OBD connect/disconnect
+            if (!obdPollingEnabled) {
+                Serial.println("[OBD] Connecting CAN bus...");
+                if (!obd2.isConnected()) {
+                    obd2.begin(PIN_CAN_TX, PIN_CAN_RX);
+                }
+                obdPollingEnabled = true;
+                Serial.println("[OBD] Polling enabled");
+            } else {
+                obdPollingEnabled = false;
+                Serial.println("[OBD] Polling disabled");
+            }
+            display.clearScreen();
+            display.drawDTCMenuTab5(-1, obdPollingEnabled, dataLogger.isLogging(), peakHoldEnabled);
+        } else if (item == 1) {
+            // Ensure CAN is initialized for DTC scan
+            if (!obdPollingEnabled) obd2.begin(PIN_CAN_TX, PIN_CAN_RX);
             display.drawDTCScanningTab5();
             tab5State = T5_DTC_SCAN;
-        } else if (item == 1) {
+        } else if (item == 2) {
+            // Ensure CAN is initialized for DTC clear
+            if (!obdPollingEnabled) obd2.begin(PIN_CAN_TX, PIN_CAN_RX);
             display.drawDTCClearingTab5();
             tab5State = T5_DTC_CLEAR;
-        } else if (item == 2) {
+        } else if (item == 3) {
             // Toggle CSV data logging
             if (dataLogger.isAvailable()) {
                 if (dataLogger.isLogging()) {
@@ -382,12 +403,11 @@ void loop() {
                 Serial.println("[LOG] No SD card");
             }
             display.clearScreen();
-            display.drawDTCMenuTab5(-1, dataLogger.isLogging(), peakHoldEnabled);
-        } else if (item == 3) {
+            display.drawDTCMenuTab5(-1, obdPollingEnabled, dataLogger.isLogging(), peakHoldEnabled);
+        } else if (item == 4) {
             // Toggle peak/min hold
             peakHoldEnabled = !peakHoldEnabled;
             if (!peakHoldEnabled) {
-                // Reset peak/min when disabling
                 for (int i = 0; i < 4; i++) {
                     peakValues[i] = gaugeValues[i];
                     minValues[i] = gaugeValues[i];
@@ -395,13 +415,14 @@ void loop() {
             }
             Serial.printf("[PEAK] Peak hold %s\n", peakHoldEnabled ? "ON" : "OFF");
             display.clearScreen();
-            display.drawDTCMenuTab5(-1, dataLogger.isLogging(), peakHoldEnabled);
-        } else if (item == 4) {
+            display.drawDTCMenuTab5(-1, obdPollingEnabled, dataLogger.isLogging(), peakHoldEnabled);
+        } else if (item == 5) {
             // PID auto-discovery scan
+            if (!obdPollingEnabled) obd2.begin(PIN_CAN_TX, PIN_CAN_RX);
             display.clearScreen();
             display.drawPIDScanningTab5();
             tab5State = T5_PID_SCAN;
-        } else if (item == 5) {
+        } else if (item == 6) {
             tab5State = T5_GAUGE;
             needsFullRedraw = true;
         }
@@ -422,7 +443,7 @@ void loop() {
         if (action == -2) {
             tab5State = T5_DTC_MENU;
             display.clearScreen();
-            display.drawDTCMenuTab5(-1, dataLogger.isLogging(), peakHoldEnabled);
+            display.drawDTCMenuTab5(-1, obdPollingEnabled, dataLogger.isLogging(), peakHoldEnabled);
         } else if (action == -1 && dtcScrollOffset > 0) {
             dtcScrollOffset--;
             display.drawDTCResultsTab5(dtcList, dtcCount, dtcScrollOffset);
@@ -444,7 +465,7 @@ void loop() {
         if (display.dtcBackTapped()) {
             tab5State = T5_DTC_MENU;
             display.clearScreen();
-            display.drawDTCMenuTab5(-1, dataLogger.isLogging(), peakHoldEnabled);
+            display.drawDTCMenuTab5(-1, obdPollingEnabled, dataLogger.isLogging(), peakHoldEnabled);
         }
         break;
     }
@@ -493,7 +514,7 @@ void loop() {
         if (display.dtcBackTapped()) {
             tab5State = T5_DTC_MENU;
             display.clearScreen();
-            display.drawDTCMenuTab5(-1, dataLogger.isLogging(), peakHoldEnabled);
+            display.drawDTCMenuTab5(-1, obdPollingEnabled, dataLogger.isLogging(), peakHoldEnabled);
         }
         break;
     }
@@ -515,18 +536,22 @@ void loop() {
         if (now - lastPollTime >= POLL_INTERVAL_MS) {
             lastPollTime = now;
             int gIdx = gaugeIndices[fullscreenSlot];
-            const GaugeConfig& g = GAUGES[gIdx];
-            uint8_t a = 0, b = 0;
-            if (obd2.requestPID(g.mode, g.pid, &a, &b, 50)) {
-                float val = decodeOBD2(g, a, b);
-                gaugeValues[fullscreenSlot] = val;
-                if (val > peakValues[fullscreenSlot]) peakValues[fullscreenSlot] = val;
-                if (val < minValues[fullscreenSlot]) minValues[fullscreenSlot] = val;
-                lastCanDataTime = now;
-                if (dataLogger.isLogging()) {
-                    dataLogger.logRow(gaugeIndices, gaugeValues, now);
+
+            if (obdPollingEnabled) {
+                const GaugeConfig& g = GAUGES[gIdx];
+                uint8_t a = 0, b = 0;
+                if (obd2.requestPID(g.mode, g.pid, &a, &b, 50)) {
+                    float val = decodeOBD2(g, a, b);
+                    gaugeValues[fullscreenSlot] = val;
+                    if (val > peakValues[fullscreenSlot]) peakValues[fullscreenSlot] = val;
+                    if (val < minValues[fullscreenSlot]) minValues[fullscreenSlot] = val;
+                    lastCanDataTime = now;
+                    if (dataLogger.isLogging()) {
+                        dataLogger.logRow(gaugeIndices, gaugeValues, now);
+                    }
                 }
             }
+
             display.drawFullscreenGauge(gIdx, gaugeValues[fullscreenSlot],
                                          peakHoldEnabled ? peakValues[fullscreenSlot] : -1,
                                          false);

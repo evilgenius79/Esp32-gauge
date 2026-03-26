@@ -98,8 +98,8 @@ public:
     int touchSlot = -1;       // Which slot was touched (0-3)
 
     // DTC & tools menu (fullscreen overlay)
-    void drawDTCMenuTab5(int selectedItem, bool logging = false, bool peakHold = false);
-    int  dtcMenuTapped();  // Returns tapped menu item 0-5, or -1
+    void drawDTCMenuTab5(int selectedItem, bool obdEnabled = false, bool logging = false, bool peakHold = false);
+    int  dtcMenuTapped();  // Returns tapped menu item 0-6, or -1
     void drawDTCScanningTab5();
     void drawDTCResultsTab5(const DTC* dtcs, int count, int scrollOffset = 0);
     int  dtcResultsScrollOrBack(); // Returns: -2=back, -1=scroll up, 1=scroll down, 0=none

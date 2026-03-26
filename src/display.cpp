@@ -171,23 +171,24 @@ void GaugeDisplay::drawDTCButton() {
 static constexpr int TCX = 640;  // Tab5 center X
 static constexpr int TCY = 360;  // Tab5 center Y
 
-static constexpr int TAB5_MENU_COUNT = 6;
+static constexpr int TAB5_MENU_COUNT = 7;
 static constexpr int TAB5_MENU_BTN_W = 400;
-static constexpr int TAB5_MENU_BTN_H = 56;
-static constexpr int TAB5_MENU_SPACING = 70;
-static constexpr int TAB5_MENU_START_Y = 140;
+static constexpr int TAB5_MENU_BTN_H = 52;
+static constexpr int TAB5_MENU_SPACING = 62;
+static constexpr int TAB5_MENU_START_Y = 110;
 
-void GaugeDisplay::drawDTCMenuTab5(int selectedItem, bool logging, bool peakHold) {
+void GaugeDisplay::drawDTCMenuTab5(int selectedItem, bool obdEnabled, bool logging, bool peakHold) {
     M5.Display.fillScreen(C_BLACK);
 
     M5.Display.setFont(&fonts::FreeSansBold18pt7b);
     M5.Display.setTextDatum(TC_DATUM);
     M5.Display.setTextColor(C_ORANGE);
-    M5.Display.drawString("TOOLS & DIAGNOSTICS", TCX, 40);
+    M5.Display.drawString("TOOLS & DIAGNOSTICS", TCX, 30);
 
-    M5.Display.drawFastHLine(TCX - 250, 100, 500, C_DKGRAY);
+    M5.Display.drawFastHLine(TCX - 250, 80, 500, C_DKGRAY);
 
     const char* labels[TAB5_MENU_COUNT] = {
+        obdEnabled ? "OBD: CONNECTED" : "OBD: CONNECT",
         "SCAN CODES", "CLEAR CODES",
         logging ? "STOP LOGGING" : "LOG TO SD",
         peakHold ? "PEAK HOLD: ON" : "PEAK HOLD: OFF",
@@ -208,11 +209,15 @@ void GaugeDisplay::drawDTCMenuTab5(int selectedItem, bool logging, bool peakHold
             bgColor = C_RED;
             textColor = C_WHITE;
             borderColor = C_RED;
-        } else if (i == 2 && logging) {
+        } else if (i == 0 && obdEnabled) {
+            // OBD connected: green indicator
+            borderColor = 0x07E0;
+            textColor = 0x07E0;
+        } else if (i == 3 && logging) {
             // Active logging: green indicator
             borderColor = 0x07E0;
             textColor = 0x07E0;
-        } else if (i == 3 && peakHold) {
+        } else if (i == 4 && peakHold) {
             // Peak hold active: yellow indicator
             borderColor = 0xFFE0;
             textColor = 0xFFE0;
