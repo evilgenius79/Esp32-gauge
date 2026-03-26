@@ -31,13 +31,14 @@ constexpr uint32_t POLL_INTERVAL_MS = 100;     // 10 Hz
 #ifdef TARGET_TAB5
 
 #include <M5Unified.h>
+#include <cstring>
 
 int  gaugeIndices[4] = {0, 1, 3, 4};  // RPM, Speed, Boost, Throttle
 float gaugeValues[4] = {0, 0, 0, 0};
 bool needsFullRedraw = true;
 int  pollSlot = 0;  // Round-robin: poll one gauge per cycle
 
-// DTC state machine (Tab5)
+// State machine
 enum Tab5State {
     T5_GAUGE,
     T5_DTC_MENU,
@@ -45,12 +46,22 @@ enum Tab5State {
     T5_DTC_RESULTS,
     T5_DTC_CLEAR,
     T5_DTC_CLEARED,
+    T5_EDITOR,
+    T5_KEYPAD,
 };
 
 Tab5State tab5State = T5_GAUGE;
 DTC dtcList[MAX_DTCS];
 int dtcCount = 0;
 int dtcScrollOffset = 0;
+
+// Editor state
+int editSlot = -1;         // Which display slot (0-3) is being edited
+int editGaugeIdx = -1;     // Which gauge index is being edited
+int editField = -1;        // Currently selected field
+GaugeConfig editCopy;      // Working copy for editing
+char keypadBuf[24];        // Keypad input buffer
+const char* keypadTitle;   // Current keypad field title
 
 void setup() {
     auto cfg = M5.config();
@@ -59,6 +70,7 @@ void setup() {
     Serial.begin(115200);
     Serial.println("\n=== ESP32 OBD2 Multi-Gauge (Tab5) ===");
 
+    loadGaugeConfigs();
     display.begin();
 
     Serial.println("[INIT] CAN bus...");
@@ -68,15 +80,49 @@ void setup() {
         Serial.println("[INIT] CAN bus FAILED - check wiring");
     }
 
-    // Init values to gauge minimums
     for (int i = 0; i < 4; i++) {
         gaugeValues[i] = GAUGES[gaugeIndices[i]].minVal;
     }
 
     display.drawAllGauges(gaugeIndices, gaugeValues, true);
     display.drawDTCButton();
-    Serial.println("[INIT] Ready! Tap gauge to cycle, tap DTC for diagnostics.");
+    Serial.println("[INIT] Ready! Tap=cycle, long-press=edit, DTC=diagnostics");
 }
+
+// Helper: apply keypad result to the editCopy field
+static void applyKeypadToField(int field, const char* buf, GaugeConfig& gc) {
+    switch (field) {
+        case 0: strncpy(gc.name, buf, sizeof(gc.name) - 1); gc.name[sizeof(gc.name)-1] = '\0'; break;
+        case 1: strncpy(gc.units, buf, sizeof(gc.units) - 1); gc.units[sizeof(gc.units)-1] = '\0'; break;
+        case 2: strncpy(gc.scaleLabel, buf, sizeof(gc.scaleLabel) - 1); gc.scaleLabel[sizeof(gc.scaleLabel)-1] = '\0'; break;
+        case 3: gc.mode = (uint8_t)strtol(buf, nullptr, 16); break;
+        case 4: gc.pid  = (uint16_t)strtol(buf, nullptr, 16); break;
+        case 5: gc.minVal    = atof(buf); break;
+        case 6: gc.maxVal    = atof(buf); break;
+        case 7: gc.warnVal   = atof(buf); break;
+        case 8: gc.dangerVal = atof(buf); break;
+    }
+}
+
+// Helper: get current field value as string for keypad
+static void fieldToString(int field, const GaugeConfig& gc, char* buf, int bufLen) {
+    switch (field) {
+        case 0: snprintf(buf, bufLen, "%s", gc.name); break;
+        case 1: snprintf(buf, bufLen, "%s", gc.units); break;
+        case 2: snprintf(buf, bufLen, "%s", gc.scaleLabel); break;
+        case 3: snprintf(buf, bufLen, "%02X", gc.mode); break;
+        case 4: snprintf(buf, bufLen, "%04X", gc.pid); break;
+        case 5: snprintf(buf, bufLen, "%.1f", gc.minVal); break;
+        case 6: snprintf(buf, bufLen, "%.1f", gc.maxVal); break;
+        case 7: snprintf(buf, bufLen, "%.1f", gc.warnVal); break;
+        case 8: snprintf(buf, bufLen, "%.1f", gc.dangerVal); break;
+    }
+}
+
+static const char* FIELD_NAMES[] = {
+    "NAME", "UNITS", "LABEL", "MODE (hex)", "PID (hex)",
+    "MIN VALUE", "MAX VALUE", "WARNING", "DANGER"
+};
 
 void loop() {
     M5.update();
@@ -84,14 +130,14 @@ void loop() {
     switch (tab5State) {
 
     case T5_GAUGE: {
-        // Check DTC button first
-        if (display.dtcButtonTapped()) {
+        auto action = display.pollTouch();
+
+        if (action == GaugeDisplay::TOUCH_DTC_BUTTON) {
             if (sleeping) {
                 sleeping = false;
                 display.setBrightness(70);
                 needsFullRedraw = true;
                 lastCanDataTime = millis();
-                Serial.println("[SLEEP] Waking up (DTC button)");
             } else {
                 Serial.println("[DTC] Opening diagnostics menu");
                 tab5State = T5_DTC_MENU;
@@ -101,25 +147,36 @@ void loop() {
             }
         }
 
-        // Touch: tap a gauge to cycle its PID
-        int tapped = display.touchedGauge();
-        if (tapped >= 0) {
+        if (action == GaugeDisplay::TOUCH_GAUGE_TAP && display.touchSlot >= 0) {
+            int slot = display.touchSlot;
             if (sleeping) {
                 sleeping = false;
                 display.setBrightness(70);
                 needsFullRedraw = true;
                 lastCanDataTime = millis();
-                Serial.println("[SLEEP] Waking up (touch)");
             } else {
-                gaugeIndices[tapped] = (gaugeIndices[tapped] + 1) % NUM_GAUGES;
-                gaugeValues[tapped] = GAUGES[gaugeIndices[tapped]].minVal;
-                Serial.printf("[TOUCH] Slot %d -> %s\n", tapped, GAUGES[gaugeIndices[tapped]].name);
-                display.drawSingleGauge(tapped, gaugeIndices[tapped], gaugeValues[tapped], true);
+                gaugeIndices[slot] = (gaugeIndices[slot] + 1) % NUM_GAUGES;
+                gaugeValues[slot] = GAUGES[gaugeIndices[slot]].minVal;
+                Serial.printf("[TOUCH] Slot %d -> %s\n", slot, GAUGES[gaugeIndices[slot]].name);
+                display.drawSingleGauge(slot, gaugeIndices[slot], gaugeValues[slot], true);
                 display.drawDTCButton();
             }
         }
 
-        // Poll one gauge per cycle (round-robin, ~2.5 Hz per gauge)
+        if (action == GaugeDisplay::TOUCH_GAUGE_LONGPRESS && display.touchSlot >= 0) {
+            editSlot = display.touchSlot;
+            editGaugeIdx = gaugeIndices[editSlot];
+            memcpy(&editCopy, &GAUGES[editGaugeIdx], sizeof(GaugeConfig));
+            editField = -1;
+            Serial.printf("[EDIT] Long-press on slot %d, editing gauge %s\n",
+                          editSlot, editCopy.name);
+            tab5State = T5_EDITOR;
+            display.clearScreen();
+            display.drawGaugeEditor(editSlot, editCopy, editField);
+            break;
+        }
+
+        // Poll one gauge per cycle (round-robin)
         uint32_t now = millis();
         if (now - lastPollTime >= POLL_INTERVAL_MS) {
             lastPollTime = now;
@@ -135,7 +192,6 @@ void loop() {
                     sleeping = false;
                     display.setBrightness(70);
                     needsFullRedraw = true;
-                    Serial.println("[SLEEP] Waking up (CAN data)");
                 }
             }
 
@@ -154,7 +210,6 @@ void loop() {
                 if (now - lastCanDataTime > SLEEP_TIMEOUT_MS && lastCanDataTime > 0) {
                     sleeping = true;
                     display.setBrightness(0);
-                    Serial.println("[SLEEP] No CAN data - going to sleep");
                 }
             }
 
@@ -163,18 +218,61 @@ void loop() {
         break;
     }
 
+    case T5_EDITOR: {
+        int field = display.editorFieldTapped();
+        if (field >= 0 && field < 9) {
+            // Open keypad for this field
+            editField = field;
+            fieldToString(field, editCopy, keypadBuf, sizeof(keypadBuf));
+            keypadTitle = FIELD_NAMES[field];
+            tab5State = T5_KEYPAD;
+            display.clearScreen();
+            display.drawEditorKeypad(keypadTitle, keypadBuf);
+        } else if (field == 99) {
+            // SAVE
+            memcpy(&GAUGES[editGaugeIdx], &editCopy, sizeof(GaugeConfig));
+            saveGaugeConfig(editGaugeIdx);
+            Serial.printf("[EDIT] Saved gauge %d: %s\n", editGaugeIdx, editCopy.name);
+            tab5State = T5_GAUGE;
+            needsFullRedraw = true;
+        } else if (field == 98) {
+            // RESET to default
+            resetGaugeConfig(editGaugeIdx);
+            memcpy(&editCopy, &GAUGES[editGaugeIdx], sizeof(GaugeConfig));
+            display.drawGaugeEditor(editSlot, editCopy, -1);
+        } else if (field == 97) {
+            // CANCEL
+            Serial.println("[EDIT] Cancelled");
+            tab5State = T5_GAUGE;
+            needsFullRedraw = true;
+        }
+        break;
+    }
+
+    case T5_KEYPAD: {
+        int result = display.keypadTapped(keypadBuf, sizeof(keypadBuf));
+        if (result == 0) {
+            // Key pressed — redraw with updated value
+            display.drawEditorKeypad(keypadTitle, keypadBuf);
+        } else if (result == 1) {
+            // OK — apply value and return to editor
+            applyKeypadToField(editField, keypadBuf, editCopy);
+            tab5State = T5_EDITOR;
+            display.clearScreen();
+            display.drawGaugeEditor(editSlot, editCopy, editField);
+        }
+        break;
+    }
+
     case T5_DTC_MENU: {
         int item = display.dtcMenuTapped();
         if (item == 0) {
-            Serial.println("[DTC] Scanning for trouble codes...");
             display.drawDTCScanningTab5();
             tab5State = T5_DTC_SCAN;
         } else if (item == 1) {
-            Serial.println("[DTC] Clearing trouble codes...");
             display.drawDTCClearingTab5();
             tab5State = T5_DTC_CLEAR;
         } else if (item == 2) {
-            Serial.println("[DTC] Returning to gauges");
             tab5State = T5_GAUGE;
             needsFullRedraw = true;
         }
@@ -184,12 +282,6 @@ void loop() {
     case T5_DTC_SCAN: {
         dtcCount = obd2.scanDTCs(dtcList, MAX_DTCS);
         if (dtcCount < 0) dtcCount = 0;
-
-        Serial.printf("[DTC] Found %d codes\n", dtcCount);
-        for (int i = 0; i < dtcCount; i++) {
-            Serial.printf("[DTC]   %s\n", dtcList[i].code);
-        }
-
         dtcScrollOffset = 0;
         display.drawDTCResultsTab5(dtcList, dtcCount, dtcScrollOffset);
         tab5State = T5_DTC_RESULTS;
@@ -199,7 +291,6 @@ void loop() {
     case T5_DTC_RESULTS: {
         int action = display.dtcResultsScrollOrBack();
         if (action == -2) {
-            // Back to menu
             tab5State = T5_DTC_MENU;
             display.clearScreen();
             display.drawDTCMenuTab5(-1);
@@ -215,7 +306,6 @@ void loop() {
 
     case T5_DTC_CLEAR: {
         bool ok = obd2.clearDTCs();
-        Serial.printf("[DTC] Clear %s\n", ok ? "OK" : "FAILED");
         display.drawDTCClearedTab5(ok);
         tab5State = T5_DTC_CLEARED;
         break;
@@ -268,6 +358,8 @@ void setup() {
     Serial.begin(115200);
     Serial.println("\n=== ESP32 OBD2 Gauge ===");
     Serial.println("CrowPanel 1.28\" + M5Stack Mini CAN");
+
+    loadGaugeConfigs();
 
     pinMode(PIN_PWR_LIGHT, OUTPUT);
     digitalWrite(PIN_PWR_LIGHT, HIGH);

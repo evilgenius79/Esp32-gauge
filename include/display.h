@@ -84,9 +84,17 @@ public:
     // --- Tab5: 4-gauge dashboard ---
     void drawAllGauges(const int indices[4], const float values[4], bool forceRedraw);
     void drawSingleGauge(int slot, int gaugeIdx, float value, bool forceRedraw);
-    int  touchedGauge();   // Returns tapped slot 0-3, or -1
     void drawDTCButton();  // Draw DTC button at center of grid
-    bool dtcButtonTapped(); // Returns true if DTC button was tapped
+
+    // Touch input — call once per loop, returns action
+    enum TouchAction {
+        TOUCH_NONE = 0,
+        TOUCH_GAUGE_TAP,      // Quick tap on a gauge (slot in touchSlot)
+        TOUCH_GAUGE_LONGPRESS, // Long press on a gauge (slot in touchSlot)
+        TOUCH_DTC_BUTTON,     // Tap on DTC button
+    };
+    TouchAction pollTouch();  // Call once per loop iteration
+    int touchSlot = -1;       // Which slot was touched (0-3)
 
     // DTC screens (fullscreen overlay)
     void drawDTCMenuTab5(int selectedItem);
@@ -97,6 +105,12 @@ public:
     void drawDTCClearingTab5();
     void drawDTCClearedTab5(bool success);
     bool dtcBackTapped();  // Generic "tap anywhere to go back"
+
+    // Gauge editor
+    void drawGaugeEditor(int slot, const GaugeConfig& gauge, int selectedField);
+    int  editorFieldTapped();  // Returns field index 0-8 or -1, 99=save, 98=cancel
+    void drawEditorKeypad(const char* title, const char* currentValue);
+    int  keypadTapped(char* buffer, int bufLen);  // Returns: 0=key, 1=done, -1=none
 
 #else
     // --- CrowPanel: single gauge + DTC menus ---
@@ -119,6 +133,13 @@ private:
     float _prevValues[4]  = {-99999, -99999, -99999, -99999};
     int   _prevGaugeIdx[4] = {-1, -1, -1, -1};
     uint32_t _lastTouchTime = 0;
+
+    // Long-press tracking
+    bool     _touching = false;
+    int      _touchQuadrant = -1;
+    uint32_t _touchStartTime = 0;
+    bool     _longPressTriggered = false;
+    static constexpr uint32_t LONG_PRESS_MS = 1000;
 
     // 2x2 grid layout: each cell 640x360, gauge 320x320 centered
     static constexpr int SCREEN_W   = 1280;

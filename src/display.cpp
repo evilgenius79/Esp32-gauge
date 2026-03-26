@@ -78,28 +78,70 @@ void GaugeDisplay::drawAllGauges(const int indices[4], const float values[4], bo
     }
 }
 
-int GaugeDisplay::touchedGauge() {
+// =============================================================================
+// Unified touch handler — reads touch once, detects tap vs long-press
+// =============================================================================
+
+GaugeDisplay::TouchAction GaugeDisplay::pollTouch() {
     auto touch = M5.Touch.getDetail();
-    if (!touch.wasClicked()) return -1;
-
-    // Debounce
     uint32_t now = millis();
-    if (now - _lastTouchTime < 300) return -1;
-    _lastTouchTime = now;
+    touchSlot = -1;
 
-    int tx = touch.x;
-    int ty = touch.y;
+    // Track touch-down for long-press detection
+    if (touch.isPressed()) {
+        if (!_touching) {
+            // Touch just started
+            _touching = true;
+            _touchStartTime = now;
+            _longPressTriggered = false;
 
-    // Ignore taps on the DTC button area (handled separately)
-    if (tx >= DTC_BTN_X && tx <= DTC_BTN_X + DTC_BTN_W &&
-        ty >= DTC_BTN_Y && ty <= DTC_BTN_Y + DTC_BTN_H) {
-        return -1;
+            int col = (touch.x < SCREEN_W / 2) ? 0 : 1;
+            int row = (touch.y < SCREEN_H / 2) ? 0 : 1;
+            _touchQuadrant = row * 2 + col;
+
+            // Check if touching DTC button area
+            if (touch.x >= DTC_BTN_X && touch.x <= DTC_BTN_X + DTC_BTN_W &&
+                touch.y >= DTC_BTN_Y && touch.y <= DTC_BTN_Y + DTC_BTN_H) {
+                _touchQuadrant = -1;  // Not a gauge quadrant
+            }
+        }
+
+        // Check for long-press (1 second hold on a gauge)
+        if (!_longPressTriggered && _touchQuadrant >= 0 &&
+            (now - _touchStartTime) >= LONG_PRESS_MS) {
+            _longPressTriggered = true;
+            touchSlot = _touchQuadrant;
+            _lastTouchTime = now;
+            return TOUCH_GAUGE_LONGPRESS;
+        }
+        return TOUCH_NONE;
     }
 
-    // Determine which quadrant was tapped
-    int col = (tx < SCREEN_W / 2) ? 0 : 1;
-    int row = (ty < SCREEN_H / 2) ? 0 : 1;
-    return row * 2 + col;
+    // Touch released
+    if (_touching) {
+        _touching = false;
+        uint32_t duration = now - _touchStartTime;
+
+        // Debounce
+        if (now - _lastTouchTime < 300) return TOUCH_NONE;
+        _lastTouchTime = now;
+
+        // Ignore if long-press already handled
+        if (_longPressTriggered) return TOUCH_NONE;
+
+        // Short tap (< 1 second)
+        if (duration < LONG_PRESS_MS) {
+            if (_touchQuadrant == -1) {
+                // DTC button tap
+                return TOUCH_DTC_BUTTON;
+            } else {
+                touchSlot = _touchQuadrant;
+                return TOUCH_GAUGE_TAP;
+            }
+        }
+    }
+
+    return TOUCH_NONE;
 }
 
 // =============================================================================
@@ -113,18 +155,6 @@ void GaugeDisplay::drawDTCButton() {
     M5.Display.setTextColor(C_ORANGE);
     M5.Display.setFont(&fonts::FreeSansBold9pt7b);
     M5.Display.drawString("DTC", SCREEN_W / 2, SCREEN_H / 2);
-}
-
-bool GaugeDisplay::dtcButtonTapped() {
-    auto touch = M5.Touch.getDetail();
-    if (!touch.wasClicked()) return false;
-
-    uint32_t now = millis();
-    if (now - _lastTouchTime < 300) return false;
-    _lastTouchTime = now;
-
-    return (touch.x >= DTC_BTN_X && touch.x <= DTC_BTN_X + DTC_BTN_W &&
-            touch.y >= DTC_BTN_Y && touch.y <= DTC_BTN_Y + DTC_BTN_H);
 }
 
 // =============================================================================
@@ -310,6 +340,249 @@ bool GaugeDisplay::dtcBackTapped() {
     _lastTouchTime = now;
 
     return true;
+}
+
+// =============================================================================
+// Gauge Editor — fullscreen touchscreen config editor
+// =============================================================================
+
+static const char* EDITOR_FIELDS[] = {
+    "NAME", "UNITS", "LABEL", "MODE", "PID",
+    "MIN", "MAX", "WARN", "DANGER"
+};
+static constexpr int NUM_FIELDS = 9;
+static constexpr int ED_ROW_H = 55;
+static constexpr int ED_START_Y = 80;
+static constexpr int ED_LABEL_X = 100;
+static constexpr int ED_VALUE_X = 700;
+static constexpr int ED_BTN_W = 500;
+
+void GaugeDisplay::drawGaugeEditor(int slot, const GaugeConfig& gauge, int selectedField) {
+    M5.Display.fillScreen(C_BLACK);
+
+    // Title
+    M5.Display.setFont(&fonts::FreeSansBold12pt7b);
+    M5.Display.setTextDatum(TC_DATUM);
+    M5.Display.setTextColor(C_ORANGE);
+    char title[32];
+    snprintf(title, sizeof(title), "EDIT GAUGE %d: %s", slot + 1, gauge.name);
+    M5.Display.drawString(title, TCX, 20);
+    M5.Display.drawFastHLine(TCX - 300, 60, 600, C_DKGRAY);
+
+    // Fields
+    M5.Display.setFont(&fonts::FreeSansBold9pt7b);
+    char valBuf[24];
+
+    for (int i = 0; i < NUM_FIELDS; i++) {
+        int y = ED_START_Y + i * ED_ROW_H;
+        int rowX = TCX - ED_BTN_W / 2;
+
+        if (i == selectedField) {
+            M5.Display.fillRoundRect(rowX, y - 5, ED_BTN_W, 42, 8, 0x1082);  // dark highlight
+            M5.Display.drawRoundRect(rowX, y - 5, ED_BTN_W, 42, 8, C_ORANGE);
+        }
+
+        // Label
+        M5.Display.setTextDatum(ML_DATUM);
+        M5.Display.setTextColor(C_GRAY);
+        M5.Display.drawString(EDITOR_FIELDS[i], ED_LABEL_X, y + 16);
+
+        // Value
+        M5.Display.setTextDatum(MR_DATUM);
+        M5.Display.setTextColor(C_WHITE);
+
+        switch (i) {
+            case 0: snprintf(valBuf, sizeof(valBuf), "%s", gauge.name); break;
+            case 1: snprintf(valBuf, sizeof(valBuf), "%s", gauge.units); break;
+            case 2: snprintf(valBuf, sizeof(valBuf), "%s", gauge.scaleLabel); break;
+            case 3: snprintf(valBuf, sizeof(valBuf), "0x%02X", gauge.mode); break;
+            case 4: snprintf(valBuf, sizeof(valBuf), "0x%04X", gauge.pid); break;
+            case 5: snprintf(valBuf, sizeof(valBuf), "%.1f", gauge.minVal); break;
+            case 6: snprintf(valBuf, sizeof(valBuf), "%.1f", gauge.maxVal); break;
+            case 7: snprintf(valBuf, sizeof(valBuf), "%.1f", gauge.warnVal); break;
+            case 8: snprintf(valBuf, sizeof(valBuf), "%.1f", gauge.dangerVal); break;
+        }
+        M5.Display.drawString(valBuf, SCREEN_W - ED_LABEL_X, y + 16);
+    }
+
+    // Bottom buttons: SAVE / RESET / CANCEL
+    int btnY = ED_START_Y + NUM_FIELDS * ED_ROW_H + 10;
+    int btnW = 180;
+    int btnH = 50;
+    int gap = 30;
+    int startX = TCX - (3 * btnW + 2 * gap) / 2;
+
+    // SAVE
+    M5.Display.fillRoundRect(startX, btnY, btnW, btnH, 10, 0x0400);  // dark green
+    M5.Display.drawRoundRect(startX, btnY, btnW, btnH, 10, 0x07E0);
+    M5.Display.setTextDatum(MC_DATUM);
+    M5.Display.setTextColor(0x07E0);
+    M5.Display.drawString("SAVE", startX + btnW / 2, btnY + btnH / 2);
+
+    // RESET
+    M5.Display.fillRoundRect(startX + btnW + gap, btnY, btnW, btnH, 10, 0x4000);
+    M5.Display.drawRoundRect(startX + btnW + gap, btnY, btnW, btnH, 10, C_ORANGE);
+    M5.Display.setTextColor(C_ORANGE);
+    M5.Display.drawString("RESET", startX + btnW + gap + btnW / 2, btnY + btnH / 2);
+
+    // CANCEL
+    M5.Display.fillRoundRect(startX + 2 * (btnW + gap), btnY, btnW, btnH, 10, 0x4000);
+    M5.Display.drawRoundRect(startX + 2 * (btnW + gap), btnY, btnW, btnH, 10, C_RED);
+    M5.Display.setTextColor(C_RED);
+    M5.Display.drawString("CANCEL", startX + 2 * (btnW + gap) + btnW / 2, btnY + btnH / 2);
+}
+
+int GaugeDisplay::editorFieldTapped() {
+    auto touch = M5.Touch.getDetail();
+    if (!touch.wasClicked()) return -1;
+
+    uint32_t now = millis();
+    if (now - _lastTouchTime < 300) return -1;
+    _lastTouchTime = now;
+
+    int tx = touch.x;
+    int ty = touch.y;
+
+    // Check field rows
+    for (int i = 0; i < NUM_FIELDS; i++) {
+        int rowY = ED_START_Y + i * ED_ROW_H - 5;
+        int rowX = TCX - ED_BTN_W / 2;
+        if (tx >= rowX && tx <= rowX + ED_BTN_W &&
+            ty >= rowY && ty <= rowY + 42) {
+            return i;
+        }
+    }
+
+    // Check bottom buttons
+    int btnY = ED_START_Y + NUM_FIELDS * ED_ROW_H + 10;
+    int btnW = 180;
+    int btnH = 50;
+    int gap = 30;
+    int startX = TCX - (3 * btnW + 2 * gap) / 2;
+
+    if (ty >= btnY && ty <= btnY + btnH) {
+        if (tx >= startX && tx <= startX + btnW) return 99;              // SAVE
+        if (tx >= startX + btnW + gap && tx <= startX + 2 * btnW + gap) return 98; // RESET
+        if (tx >= startX + 2 * (btnW + gap) && tx <= startX + 3 * btnW + 2 * gap) return 97; // CANCEL
+    }
+
+    return -1;
+}
+
+// =============================================================================
+// On-screen keypad for editing values
+// =============================================================================
+
+static constexpr int KP_KEYS_PER_ROW = 6;
+static constexpr int KP_KEY_W = 100;
+static constexpr int KP_KEY_H = 70;
+static constexpr int KP_GAP = 10;
+static constexpr int KP_START_Y = 280;
+
+// Row 1: 1-6, Row 2: 7-0 . -, Row 3: A-F, Row 4: DEL OK
+static const char* KP_LABELS[] = {
+    "1", "2", "3", "4", "5", "6",
+    "7", "8", "9", "0", ".", "-",
+    "A", "B", "C", "D", "E", "F",
+    "DEL", " ", " ", " ", " ", "OK"
+};
+static constexpr int KP_NUM_KEYS = 24;
+
+void GaugeDisplay::drawEditorKeypad(const char* fieldTitle, const char* currentValue) {
+    M5.Display.fillScreen(C_BLACK);
+
+    // Title
+    M5.Display.setFont(&fonts::FreeSansBold12pt7b);
+    M5.Display.setTextDatum(TC_DATUM);
+    M5.Display.setTextColor(C_ORANGE);
+    M5.Display.drawString(fieldTitle, TCX, 30);
+
+    // Current value display
+    M5.Display.fillRoundRect(TCX - 250, 80, 500, 60, 10, 0x1082);
+    M5.Display.drawRoundRect(TCX - 250, 80, 500, 60, 10, C_GRAY);
+    M5.Display.setFont(&fonts::FreeSansBold18pt7b);
+    M5.Display.setTextDatum(MC_DATUM);
+    M5.Display.setTextColor(C_WHITE);
+    M5.Display.drawString(currentValue, TCX, 110);
+
+    // Instruction
+    M5.Display.setFont(&fonts::FreeSansBold9pt7b);
+    M5.Display.setTextColor(C_GRAY);
+    M5.Display.drawString("For hex PID: use 0-9 and A-F", TCX, 170);
+    M5.Display.drawString("For text: type letters with keypad", TCX, 195);
+
+    // Draw keys
+    M5.Display.setFont(&fonts::FreeSansBold12pt7b);
+    int totalW = KP_KEYS_PER_ROW * KP_KEY_W + (KP_KEYS_PER_ROW - 1) * KP_GAP;
+    int kpStartX = TCX - totalW / 2;
+
+    for (int i = 0; i < KP_NUM_KEYS; i++) {
+        int row = i / KP_KEYS_PER_ROW;
+        int col = i % KP_KEYS_PER_ROW;
+        int x = kpStartX + col * (KP_KEY_W + KP_GAP);
+        int y = KP_START_Y + row * (KP_KEY_H + KP_GAP);
+
+        if (KP_LABELS[i][0] == ' ') continue;  // Skip empty slots
+
+        uint16_t bgColor = C_DKGRAY;
+        uint16_t fgColor = C_WHITE;
+
+        if (strcmp(KP_LABELS[i], "OK") == 0) {
+            bgColor = 0x0400; fgColor = 0x07E0;
+        } else if (strcmp(KP_LABELS[i], "DEL") == 0) {
+            bgColor = 0x4000; fgColor = C_RED;
+        } else if (i >= 12 && i < 18) {
+            fgColor = C_ORANGE;  // Hex letters
+        }
+
+        M5.Display.fillRoundRect(x, y, KP_KEY_W, KP_KEY_H, 8, bgColor);
+        M5.Display.drawRoundRect(x, y, KP_KEY_W, KP_KEY_H, 8, fgColor);
+        M5.Display.setTextDatum(MC_DATUM);
+        M5.Display.setTextColor(fgColor);
+        M5.Display.drawString(KP_LABELS[i], x + KP_KEY_W / 2, y + KP_KEY_H / 2);
+    }
+}
+
+int GaugeDisplay::keypadTapped(char* buffer, int bufLen) {
+    auto touch = M5.Touch.getDetail();
+    if (!touch.wasClicked()) return -1;
+
+    uint32_t now = millis();
+    if (now - _lastTouchTime < 200) return -1;
+    _lastTouchTime = now;
+
+    int tx = touch.x;
+    int ty = touch.y;
+
+    int totalW = KP_KEYS_PER_ROW * KP_KEY_W + (KP_KEYS_PER_ROW - 1) * KP_GAP;
+    int kpStartX = TCX - totalW / 2;
+
+    for (int i = 0; i < KP_NUM_KEYS; i++) {
+        if (KP_LABELS[i][0] == ' ') continue;
+
+        int row = i / KP_KEYS_PER_ROW;
+        int col = i % KP_KEYS_PER_ROW;
+        int x = kpStartX + col * (KP_KEY_W + KP_GAP);
+        int y = KP_START_Y + row * (KP_KEY_H + KP_GAP);
+
+        if (tx >= x && tx <= x + KP_KEY_W && ty >= y && ty <= y + KP_KEY_H) {
+            if (strcmp(KP_LABELS[i], "OK") == 0) return 1;   // Done
+            if (strcmp(KP_LABELS[i], "DEL") == 0) {
+                int len = strlen(buffer);
+                if (len > 0) buffer[len - 1] = '\0';
+                return 0;
+            }
+            // Append character
+            int len = strlen(buffer);
+            if (len < bufLen - 1) {
+                buffer[len] = KP_LABELS[i][0];
+                buffer[len + 1] = '\0';
+            }
+            return 0;
+        }
+    }
+
+    return -1;  // No key hit
 }
 
 // #############################################################################

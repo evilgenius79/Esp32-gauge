@@ -6,9 +6,9 @@
 // =============================================================================
 
 struct GaugeConfig {
-    const char* name;           // Display name
-    const char* units;          // Unit string for numeric readout
-    const char* scaleLabel;     // Label near scale (e.g., "x1000r/min")
+    char        name[12];       // Display name (editable)
+    char        units[8];       // Unit string for numeric readout
+    char        scaleLabel[16]; // Label near scale (e.g., "x1000r/min")
     uint8_t     mode;           // OBD2 mode (0x01 standard, 0x22 enhanced)
     uint16_t    pid;            // OBD2 PID (1 byte for Mode 01, 2 bytes for Mode 22)
     float       minVal;         // Minimum display value
@@ -44,15 +44,24 @@ inline float decodeOBD2(const GaugeConfig& gauge, uint8_t a, uint8_t b) {
 
 constexpr int NUM_GAUGES = 9;
 
-const GaugeConfig GAUGES[NUM_GAUGES] = {
-    //  name        units       scaleLabel      mode  pid     min  max   warn  danger divisor divs bytes dec
-    { "RPM",       "rpm",      "x1000r/min",   0x01, 0x0C,    0, 8000, 5500, 6500, 1000, 8,  2,  0 },
-    { "SPEED",     "mph",      "SPEED",        0x01, 0x0D,    0,  160,  110,  140,    1,  8, 1,  0 },
-    { "COOLANT",   "\xB0""F",  "COOLANT",      0x01, 0x05,  100,  260,  210,  240,    1,  4, 1,  0 },
-    { "BOOST",     "psi",      "BOOST",        0x22, 0x033E, -15,   30,   25,   28,    1,  9, 2,  1 },
-    { "THROTTLE",  "%",        "THROTTLE",     0x01, 0x11,    0,  100,   80,   95,    1,  5, 1,  0 },
-    { "LOAD",      "%",        "LOAD",         0x01, 0x04,    0,  100,   80,   95,    1,  5, 1,  0 },
-    { "IAT",       "\xB0""F",  "PRE-TURBO",    0x01, 0x0F,    0,  200,  140,  170,    1,  4, 1,  0 },
-    { "CHG AIR",   "\xB0""F",  "POST-IC",      0x22, 0xF40F,  0,  300,  200,  250,    1,  6, 1,  0 },
-    { "VOLTAGE",   "V",        "VOLTAGE",      0x01, 0x42,    8,   16,   15,   16,    1,  8, 2,  1 },
+// Default gauge configurations (copied into mutable array at startup)
+static const GaugeConfig DEFAULT_GAUGES[NUM_GAUGES] = {
+    //  name        units    scaleLabel       mode  pid     min  max   warn  danger divisor divs bytes dec
+    { "RPM",       "rpm",   "x1000r/min",   0x01, 0x0C,    0, 8000, 5500, 6500, 1000, 8,  2,  0 },
+    { "SPEED",     "mph",   "SPEED",        0x01, 0x0D,    0,  160,  110,  140,    1,  8, 1,  0 },
+    { "COOLANT",   "\xB0""F", "COOLANT",    0x01, 0x05,  100,  260,  210,  240,    1,  4, 1,  0 },
+    { "BOOST",     "psi",   "BOOST",        0x22, 0x033E, -15,   30,   25,   28,    1,  9, 2,  1 },
+    { "THROTTLE",  "%",     "THROTTLE",     0x01, 0x11,    0,  100,   80,   95,    1,  5, 1,  0 },
+    { "LOAD",      "%",     "LOAD",         0x01, 0x04,    0,  100,   80,   95,    1,  5, 1,  0 },
+    { "IAT",       "\xB0""F", "PRE-TURBO",  0x01, 0x0F,    0,  200,  140,  170,    1,  4, 1,  0 },
+    { "CHG AIR",   "\xB0""F", "POST-IC",    0x22, 0xF40F,  0,  300,  200,  250,    1,  6, 1,  0 },
+    { "VOLTAGE",   "V",     "VOLTAGE",      0x01, 0x42,    8,   16,   15,   16,    1,  8, 2,  1 },
 };
+
+// Mutable gauge array — editable at runtime, persisted to NVS
+extern GaugeConfig GAUGES[NUM_GAUGES];
+
+// NVS persistence
+void loadGaugeConfigs();           // Load from NVS (or defaults if no saved data)
+void saveGaugeConfig(int index);   // Save single gauge config to NVS
+void resetGaugeConfig(int index);  // Reset single gauge to factory default
