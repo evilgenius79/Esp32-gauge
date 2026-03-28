@@ -102,7 +102,12 @@ GaugeDisplay::TouchAction GaugeDisplay::pollTouch() {
             // Check if touching DTC button area
             if (touch.x >= DTC_BTN_X && touch.x <= DTC_BTN_X + DTC_BTN_W &&
                 touch.y >= DTC_BTN_Y && touch.y <= DTC_BTN_Y + DTC_BTN_H) {
-                _touchQuadrant = -1;  // Not a gauge quadrant
+                _touchQuadrant = -1;  // DTC button
+            }
+            // Check if touching LOG button area
+            else if (touch.x >= LOG_BTN_X && touch.x <= LOG_BTN_X + LOG_BTN_W &&
+                     touch.y >= LOG_BTN_Y && touch.y <= LOG_BTN_Y + LOG_BTN_H) {
+                _touchQuadrant = -2;  // LOG button
             }
         }
 
@@ -132,8 +137,9 @@ GaugeDisplay::TouchAction GaugeDisplay::pollTouch() {
         // Short tap (< 1 second)
         if (duration < LONG_PRESS_MS) {
             if (_touchQuadrant == -1) {
-                // DTC button tap
                 return TOUCH_DTC_BUTTON;
+            } else if (_touchQuadrant == -2) {
+                return TOUCH_LOG_BUTTON;
             } else {
                 touchSlot = _touchQuadrant;
                 return TOUCH_GAUGE_TAP;
@@ -148,13 +154,24 @@ GaugeDisplay::TouchAction GaugeDisplay::pollTouch() {
 // DTC Button — sits at center of the 2x2 grid intersection
 // =============================================================================
 
-void GaugeDisplay::drawDTCButton() {
-    M5.Display.fillRoundRect(DTC_BTN_X, DTC_BTN_Y, DTC_BTN_W, DTC_BTN_H, 10, C_DKGRAY);
-    M5.Display.drawRoundRect(DTC_BTN_X, DTC_BTN_Y, DTC_BTN_W, DTC_BTN_H, 10, C_ORANGE);
+static constexpr uint16_t C_GREEN  = 0x07E0;
+
+void GaugeDisplay::drawDTCButton(bool logging) {
+    // DTC button (above center line)
+    M5.Display.fillRoundRect(DTC_BTN_X, DTC_BTN_Y, DTC_BTN_W, DTC_BTN_H, 8, C_DKGRAY);
+    M5.Display.drawRoundRect(DTC_BTN_X, DTC_BTN_Y, DTC_BTN_W, DTC_BTN_H, 8, C_ORANGE);
     M5.Display.setTextDatum(MC_DATUM);
     M5.Display.setTextColor(C_ORANGE);
     M5.Display.setFont(&fonts::FreeSansBold9pt7b);
-    M5.Display.drawString("DTC", SCREEN_W / 2, SCREEN_H / 2);
+    M5.Display.drawString("DTC", DTC_BTN_X + DTC_BTN_W / 2, DTC_BTN_Y + DTC_BTN_H / 2);
+
+    // LOG button (below center line) — green when logging, red when stopped
+    uint16_t logColor = logging ? C_GREEN : C_RED;
+    M5.Display.fillRoundRect(LOG_BTN_X, LOG_BTN_Y, LOG_BTN_W, LOG_BTN_H, 8, C_DKGRAY);
+    M5.Display.drawRoundRect(LOG_BTN_X, LOG_BTN_Y, LOG_BTN_W, LOG_BTN_H, 8, logColor);
+    M5.Display.setTextColor(logColor);
+    const char* label = logging ? "STOP" : "LOG";
+    M5.Display.drawString(label, LOG_BTN_X + LOG_BTN_W / 2, LOG_BTN_Y + LOG_BTN_H / 2);
 }
 
 // =============================================================================

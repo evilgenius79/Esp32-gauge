@@ -32,11 +32,14 @@ constexpr uint32_t POLL_INTERVAL_MS = 100;     // 10 Hz
 
 #include <M5Unified.h>
 #include <cstring>
+#include "datalog.h"
 
 int  gaugeIndices[4] = {0, 1, 3, 4};  // RPM, Speed, Boost, Throttle
 float gaugeValues[4] = {0, 0, 0, 0};
 bool needsFullRedraw = true;
 int  pollSlot = 0;  // Round-robin: poll one gauge per cycle
+
+DataLogger dataLogger;
 
 // State machine
 enum Tab5State {
@@ -85,8 +88,10 @@ void setup() {
         gaugeValues[i] = GAUGES[gaugeIndices[i]].minVal;
     }
 
+    dataLogger.begin();
+
     display.drawAllGauges(gaugeIndices, gaugeValues, true);
-    display.drawDTCButton();
+    display.drawDTCButton(false);
     Serial.println("[INIT] Ready! Tap=cycle, long-press=edit, DTC=diagnostics");
 }
 
@@ -158,6 +163,24 @@ void loop() {
             }
         }
 
+        if (action == GaugeDisplay::TOUCH_LOG_BUTTON && !sleeping) {
+            if (dataLogger.isLogging()) {
+                dataLogger.stop();
+                Serial.println("[LOG] Logging stopped");
+            } else {
+                const char* names[4] = {
+                    GAUGES[gaugeIndices[0]].name,
+                    GAUGES[gaugeIndices[1]].name,
+                    GAUGES[gaugeIndices[2]].name,
+                    GAUGES[gaugeIndices[3]].name
+                };
+                dataLogger.startSession(names);
+                Serial.println("[LOG] Logging started");
+            }
+            // Redraw button to reflect new state
+            display.drawDTCButton(dataLogger.isLogging());
+        }
+
         if (action == GaugeDisplay::TOUCH_GAUGE_TAP && display.touchSlot >= 0) {
             int slot = display.touchSlot;
             if (sleeping) {
@@ -170,7 +193,7 @@ void loop() {
                 gaugeValues[slot] = GAUGES[gaugeIndices[slot]].minVal;
                 Serial.printf("[TOUCH] Slot %d -> %s\n", slot, GAUGES[gaugeIndices[slot]].name);
                 display.drawSingleGauge(slot, gaugeIndices[slot], gaugeValues[slot], true);
-                display.drawDTCButton();
+                display.drawDTCButton(dataLogger.isLogging());
             }
         }
 
@@ -199,6 +222,11 @@ void loop() {
                 gaugeValues[pollSlot] = decodeOBD2(g, a, b);
                 lastCanDataTime = now;
 
+                // Log data if logging is active
+                if (dataLogger.isLogging()) {
+                    dataLogger.logRow(gaugeValues, now);
+                }
+
                 if (sleeping) {
                     sleeping = false;
                     display.setBrightness(70);
@@ -210,12 +238,12 @@ void loop() {
                 if (needsFullRedraw) {
                     display.clearScreen();
                     display.drawAllGauges(gaugeIndices, gaugeValues, true);
-                    display.drawDTCButton();
+                    display.drawDTCButton(dataLogger.isLogging());
                     needsFullRedraw = false;
                 } else {
                     display.drawSingleGauge(pollSlot, gaugeIndices[pollSlot],
                                             gaugeValues[pollSlot], false);
-                    display.drawDTCButton();
+                    display.drawDTCButton(dataLogger.isLogging());
                 }
 
                 if (now - lastCanDataTime > SLEEP_TIMEOUT_MS && lastCanDataTime > 0) {

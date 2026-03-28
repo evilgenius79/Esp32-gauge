@@ -84,7 +84,7 @@ public:
     // --- Tab5: 4-gauge dashboard ---
     void drawAllGauges(const int indices[4], const float values[4], bool forceRedraw);
     void drawSingleGauge(int slot, int gaugeIdx, float value, bool forceRedraw);
-    void drawDTCButton();  // Draw DTC button at center of grid
+    void drawDTCButton(bool logging = false);  // Draw DTC + LOG buttons at center of grid
 
     // Touch input — call once per loop, returns action
     enum TouchAction {
@@ -92,6 +92,7 @@ public:
         TOUCH_GAUGE_TAP,      // Quick tap on a gauge (slot in touchSlot)
         TOUCH_GAUGE_LONGPRESS, // Long press on a gauge (slot in touchSlot)
         TOUCH_DTC_BUTTON,     // Tap on DTC button
+        TOUCH_LOG_BUTTON,     // Tap on LOG button
     };
     TouchAction pollTouch();  // Call once per loop iteration
     int touchSlot = -1;       // Which slot was touched (0-3)
@@ -155,11 +156,17 @@ private:
     int slotX(int slot) const { return (slot % 2) * CELL_W + (CELL_W - GAUGE_SIZE) / 2; }
     int slotY(int slot) const { return (slot / 2) * CELL_H + (CELL_H - GAUGE_SIZE) / 2; }
 
-    // DTC button at center intersection — 80x80 rounded rect
+    // DTC button at center intersection
     static constexpr int DTC_BTN_W = 80;
-    static constexpr int DTC_BTN_H = 80;
+    static constexpr int DTC_BTN_H = 40;
     static constexpr int DTC_BTN_X = (SCREEN_W - DTC_BTN_W) / 2;
-    static constexpr int DTC_BTN_Y = (SCREEN_H - DTC_BTN_H) / 2;
+    static constexpr int DTC_BTN_Y = (SCREEN_H / 2) - DTC_BTN_H - 2;  // Above center
+
+    // LOG button just below DTC button
+    static constexpr int LOG_BTN_W = 80;
+    static constexpr int LOG_BTN_H = 40;
+    static constexpr int LOG_BTN_X = (SCREEN_W - LOG_BTN_W) / 2;
+    static constexpr int LOG_BTN_Y = (SCREEN_H / 2) + 2;  // Below center
 
 #else
     LGFX        _tft;
