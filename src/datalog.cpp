@@ -19,7 +19,14 @@ bool DataLogger::begin() {
 }
 
 void DataLogger::startSession(const char* gaugeNames[4]) {
-    if (!_sdAvailable || _logging) return;
+    if (_logging) return;
+
+    _logging = true;
+
+    if (!_sdAvailable) {
+        Serial.println("[LOG] Started (no SD card — data not saved)");
+        return;
+    }
 
     // Generate filename from uptime
     uint32_t sec = millis() / 1000;
@@ -39,7 +46,6 @@ void DataLogger::startSession(const char* gaugeNames[4]) {
                  gaugeNames[0], gaugeNames[1], gaugeNames[2], gaugeNames[3]);
     _file.flush();
     _lastFlush = millis();
-    _logging = true;
     Serial.printf("[LOG] Started: %s\n", _filename);
 }
 
@@ -58,10 +64,12 @@ void DataLogger::logRow(const float values[4], uint32_t timestamp) {
 
 void DataLogger::stop() {
     if (!_logging) return;
-    _file.flush();
-    _file.close();
+    if (_file) {
+        _file.flush();
+        _file.close();
+    }
     _logging = false;
-    Serial.printf("[LOG] Stopped: %s\n", _filename);
+    Serial.println("[LOG] Stopped");
 }
 
 #endif

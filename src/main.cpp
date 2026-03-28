@@ -164,9 +164,9 @@ void loop() {
         }
 
         if (action == GaugeDisplay::TOUCH_LOG_BUTTON && !sleeping) {
+            Serial.printf("[LOG] Button pressed, currently logging=%d\n", dataLogger.isLogging());
             if (dataLogger.isLogging()) {
                 dataLogger.stop();
-                Serial.println("[LOG] Logging stopped");
             } else {
                 const char* names[4] = {
                     GAUGES[gaugeIndices[0]].name,
@@ -175,7 +175,6 @@ void loop() {
                     GAUGES[gaugeIndices[3]].name
                 };
                 dataLogger.startSession(names);
-                Serial.println("[LOG] Logging started");
             }
             // Redraw button to reflect new state
             display.drawDTCButton(dataLogger.isLogging());

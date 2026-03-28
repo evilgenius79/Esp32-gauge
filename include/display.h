@@ -157,16 +157,16 @@ private:
     int slotY(int slot) const { return (slot / 2) * CELL_H + (CELL_H - GAUGE_SIZE) / 2; }
 
     // DTC button at center intersection
-    static constexpr int DTC_BTN_W = 80;
-    static constexpr int DTC_BTN_H = 40;
+    static constexpr int DTC_BTN_W = 120;
+    static constexpr int DTC_BTN_H = 50;
     static constexpr int DTC_BTN_X = (SCREEN_W - DTC_BTN_W) / 2;
-    static constexpr int DTC_BTN_Y = (SCREEN_H / 2) - DTC_BTN_H - 2;  // Above center
+    static constexpr int DTC_BTN_Y = (SCREEN_H / 2) - DTC_BTN_H - 4;  // Above center
 
     // LOG button just below DTC button
-    static constexpr int LOG_BTN_W = 80;
-    static constexpr int LOG_BTN_H = 40;
+    static constexpr int LOG_BTN_W = 120;
+    static constexpr int LOG_BTN_H = 50;
     static constexpr int LOG_BTN_X = (SCREEN_W - LOG_BTN_W) / 2;
-    static constexpr int LOG_BTN_Y = (SCREEN_H / 2) + 2;  // Below center
+    static constexpr int LOG_BTN_Y = (SCREEN_H / 2) + 4;  // Below center
 
 #else
     LGFX        _tft;
